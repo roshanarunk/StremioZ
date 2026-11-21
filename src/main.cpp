@@ -10,6 +10,7 @@
 #include <sstream>
 
 #include "core/globals.h"
+#include "stremioz/webui.h"
 #include "mpv/player.h"
 #include "node/server.h"
 #include "tray/tray.h"
@@ -52,6 +53,7 @@ int main(int argc, char *argv[]) {
     std::string arg(argv[i]);
     if (arg.rfind("--webui-url=", 0) == 0) {
       g_webuiUrls.insert(g_webuiUrls.begin(), Utf8ToWstring(arg.substr(12)));
+      g_webuiUrlFromCommandLine = true; // StremioZ
     } else if (arg.rfind("--autoupdater-endpoint=", 0) == 0) {
       g_updateUrl = arg.substr(23);
     } else if (arg == "--streaming-server-disabled") {

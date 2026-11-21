@@ -114,7 +114,7 @@ Pinned component versions live in one manifest. TensorRT is installed at first r
 - AnimeJaNai's SPAN models run on libaji's **native CUDA kernels** on sm_80+, so no TensorRT engine build happens for the default profiles. TensorRT is still installed, for custom models and RIFE.
 - Stremio's web UI forwards keys to mpv as `CTRL+J` / `SHIFT+2`. Bindings must use that spelling (mpv letter keys are case-sensitive).
 - The window opens small on first run. TV mode (Phase 5) should start fullscreen.
-- Stremio's web UI is loaded from `stremio.zarg.me` (Zaarrg's patched build). Pin or self-host it before Kai's class-name-based webmods go in (Phase 2).
+- Stremio's web UI: Zaarrg's build is now built from source at a pinned commit (`tools/build-webui.ps1`) and served locally from `webui\`. `stremio.zarg.me` stays as a fallback.
 
 ## 6. Constraints to respect
 

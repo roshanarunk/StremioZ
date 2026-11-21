@@ -118,3 +118,12 @@ if ($Force -or -not (Test-Path $ajnStamp) -or (Get-Content $ajnStamp) -ne $Comp.
     Set-Content $ajnStamp $c.tag
     Write-Host "AnimeJaNai runtime ready: $ajnDir"
 } else { Write-Host 'AnimeJaNai runtime: up to date' }
+
+# ---------------------------------------------------------------- Stremio web UI
+# Built from source (pinned commit); without Node.js StremioZ falls back to the
+# hosted copy at runtime.
+if (Get-Command npx -ErrorAction SilentlyContinue) {
+    & (Join-Path $PSScriptRoot 'build-webui.ps1') -Force:$Force
+} else {
+    Write-Warning 'Node.js not found: skipping the local web UI build (StremioZ will load the hosted web UI).'
+}

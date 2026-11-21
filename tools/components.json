@@ -35,5 +35,11 @@
     "commit": "a5a2a37e818fb5e9406caf65af374fa7fe7700af",
     "release": "v4.8.0",
     "releaseAsset": "Stremio-Kai_v4.8.0.7z"
+  },
+  "webui": {
+    "_note": "Zaarrg's Stremio Web build (stremio.zarg.me), built from source by tools/build-webui.ps1; Kai's theme targets its class names",
+    "repo": "Zaarrg/stremio-web-shell-fixes",
+    "commit": "6f6b0558dbb064bca18a8dcc22cb1f3f4c455b22",
+    "pnpm": "9.15.9"
   }
 }

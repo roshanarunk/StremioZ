@@ -81,6 +81,15 @@ foreach ($stale in 'scripts\skip-intro.lua', 'scripts\svp_cleanup.lua', 'scripts
     Remove-Item -Force -ErrorAction SilentlyContinue (Join-Path $cfg $stale)
 }
 
+# Pinned Stremio web UI (tools/build-webui.ps1). Mirrored, so an old build's
+# asset folder does not linger.
+$webui = Join-Path $Deps 'webui'
+if (Test-Path (Join-Path $webui 'index.html')) {
+    robocopy $webui (Join-Path $Out 'webui') /MIR /XF .commit /NFL /NDL /NJH /NJS /NP /R:1 /W:1 | Out-Null
+    if ($LASTEXITCODE -ge 8) { throw "robocopy webui failed ($LASTEXITCODE)" }
+    $global:LASTEXITCODE = 0
+} else { Write-Warning 'local web UI missing (run tools/build-webui.ps1); the hosted one will be used' }
+
 # Stremio Kai: UI webmods, scripts, script-opts, shaders, fonts (vendored).
 Copy-Tree (Join-Path $Root 'vendor\kai\portable_config') $cfg
 $player = Join-Path $Deps 'thedatabase-mpv\player\mpv.exe'

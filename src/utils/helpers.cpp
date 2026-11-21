@@ -1,4 +1,5 @@
 #include "helpers.h"
+#include "../stremioz/webui.h"
 
 #include <algorithm>
 #include <fstream>
@@ -164,6 +165,7 @@ bool IsEndpointReachable(const std::wstring& url)
 
 std::wstring GetFirstReachableUrl() {
     for (const auto& url : g_webuiUrls) {
+        if (IsLocalWebUiUrl(url)) return url;   // StremioZ: served from disk
         if (IsEndpointReachable(url)) {
             return url;
         }

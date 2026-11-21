@@ -8,3 +8,4 @@ deps/thedatabase-mpv/
 *.user
 deps/.download/
 deps/animejanai-runtime/
+deps/webui/

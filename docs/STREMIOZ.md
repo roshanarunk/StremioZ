@@ -13,7 +13,7 @@ Config layering in `dist\StremioZ\portable_config` (later wins):
 ## Prerequisites
 
 - Visual Studio 2022 or 2026 with **Desktop development with C++** and **C++ CMake tools**
-- git, 7-Zip, PowerShell 7
+- git, 7-Zip, PowerShell 7, Node.js (builds the web UI; without it StremioZ falls back to the hosted one)
 - vcpkg (default location `%USERPROFILE%\vcpkg`, or set `VCPKG_ROOT`) with:
 
 ```powershell
@@ -37,6 +37,9 @@ The result is `dist\StremioZ\stremio.exe`, a portable folder.
   - the AnimeJaNai runtime
   - the standalone `mpv.exe` from the same libmpv release (Kai's thumbfast seek previews)
   - discord-rpc, built from source with `tools/patches/discord-rpc-3.4.0-type-buttons.patch`
+  - the Stremio web UI, built by `tools/build-webui.ps1` from Zaarrg/stremio-web-shell-fixes at the pinned commit:
+    - Dependencies are installed with pnpm's frozen lockfile and `--ignore-scripts`, so no package install scripts run.
+    - Checked against what stremio.zarg.me serves: identical CSS, worker and stremio-core wasm. main.js has the same modules with different numeric ids.
 - `assemble.ps1` builds `stremio.exe` (CMake + Ninja + MSVC) and stages the folder in place:
   - It keeps TensorRT engines and user settings between runs. Pass `-Clean` to start over.
   - `-SkipBuild` restages without compiling.
@@ -53,6 +56,7 @@ The result is `dist\StremioZ\stremio.exe`, a portable folder.
 | Auto-update | off until StremioZ has its own signed feed |
 | Stremio Kai | UI webmods, smart track selector, skip intro, profile manager, shaders, fonts. SVP removed; AnimeJaNai is the default anime upscaler (`vendor/kai/STREMIOZ-CHANGES.md`) |
 | mpv commands from the web UI | `script-message` allowed (Kai's bridge uses it). The web player's `hwdec` / `hwdec-codecs` sets are ignored: AnimeJaNai's backend picks the decoder. |
+| Web UI | Served from `webui\` beside the exe as `https://web.stremioz.example/index.html`, through a WebView2 virtual host. The remote URLs stay as fallbacks, and `--webui-url=` still overrides. Kai's theme targets this exact build's class names. |
 | `--devtools-port=N` | opt-in Chrome DevTools Protocol port on localhost, for testing the web UI (for example with a CDP script) |
 | `overlay/portable_config` | `mpv.conf`: AnimeJaNai defaults, then Kai's tuning, then Stremio overrides (no watch-later, no forced `alang`/`slang`). Keeps `gpu-api=vulkan` (CUDA interop).<br>`input.conf`: Kai's keys plus AnimeJaNai's, without SVP and without `q quit` |
 | server.js | Pinned to Stremio's current upload of v4.20.15. Community's recorded checksum is from an older upload. |
@@ -78,5 +82,5 @@ The upscaler for anime is chosen in **Settings → Player → Anime Upscaler** (
 ## Known issues
 
 - If a video starts while the window is minimized, the Vulkan output can't be created (0×0 surface) and that video plays without picture. `PauseOnMinimize=1`, the default, avoids most cases.
-- The web UI is loaded from `stremio.zarg.me` (Zaarrg's build, unchanged since Dec 2025). Kai's styling targets its class names, so a change there could break Kai's theme.
+- The local web UI has its own origin. Logins and Kai settings from a copy that loaded `stremio.zarg.me` don't carry over: sign in once.
 - Kai's welcome wizard still says "Stremio Kai" (branding is Phase 6).

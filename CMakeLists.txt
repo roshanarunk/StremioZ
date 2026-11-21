@@ -69,6 +69,8 @@ set(SOURCES
         src/utils/discord.h
         src/stremioz/animejanai_env.h
         src/stremioz/animejanai_env.cpp
+        src/stremioz/webui.h
+        src/stremioz/webui.cpp
 )
 
 add_executable(${PROJECT_NAME} WIN32 ${SOURCES})

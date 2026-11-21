@@ -11,6 +11,7 @@
 #include "../utils/helpers.h"
 #include "../ui/mainwindow.h"
 #include "../utils/extensions.h"
+#include "../stremioz/webui.h"
 
 static const wchar_t* EXEC_SHELL_SCRIPT = LR"JS_CODE(
 try {
@@ -260,6 +261,13 @@ void InitWebView2(HWND hWnd)
                     g_webviewController->get_CoreWebView2(&coreWebView);
                     g_webview = coreWebView.try_query<ICoreWebView2_21>();
                     if (!g_webview) return E_FAIL;
+
+                    // StremioZ: serve the pinned local web UI first (remote URLs stay as fallbacks)
+                    MapLocalWebUi(g_webview.get());
+                    std::wstring localUi = LocalWebUiUrl();
+                    if (!localUi.empty() && !g_webuiUrlFromCommandLine) {
+                        g_webuiUrls.insert(g_webuiUrls.begin(), localUi);
+                    }
 
                     wil::com_ptr<ICoreWebView2Profile> webView2Profile;
                     g_webview->get_Profile(&webView2Profile);
