@@ -52,6 +52,7 @@ extern std::wstring  g_webuiUrl;
 // Args
 extern bool g_streamingServer;
 extern bool g_autoupdaterForceFull;
+extern int g_devtoolsPort; // StremioZ: 0 = off
 
 // mpv
 extern mpv_handle* g_mpv;

@@ -71,13 +71,23 @@ Copy-Item -Force $serverJs (Join-Path $Out 'server.js')
 Copy-Item -Force (Join-Path $Root 'utils\windows\stremio-runtime.exe') $Out
 Get-ChildItem (Join-Path $Root 'utils\windows\ffmpeg') -File | Copy-Item -Force -Destination $Out
 
-# Community defaults (skip-intro script, Anime4K shaders, app settings)
-Copy-Tree (Join-Path $Root 'utils\mpv\anime4k\portable_config\scripts') (Join-Path $cfg 'scripts')
-if (-not (Test-Path (Join-Path $cfg 'shaders\Anime4K_Restore_CNN_VL.glsl'))) {
-    $z = Find-SevenZip
-    & $z e -y "-o$(Join-Path $cfg 'shaders')" (Join-Path $Root 'utils\mpv\anime4k\anime4k-High-end.zip') 'shaders\*.glsl' | Out-Null
+# Files earlier StremioZ builds or upstream configs placed that must not linger
+# (Copy-Tree never deletes): Community's skip-intro (Kai's notify_skip replaces
+# it) and Kai's SVP pieces.
+foreach ($stale in 'scripts\skip-intro.lua', 'scripts\svp_cleanup.lua', 'scripts\reactive_vf_bypass.lua',
+                   'script-opts\svp.conf', 'svp_anime.vpy', 'svp_cinema.vpy',
+                   'webmods\UI\update-notification.js', 'webmods\UI\update-notification.css',
+                   'webmods\UI\donation-manager.js') {
+    Remove-Item -Force -ErrorAction SilentlyContinue (Join-Path $cfg $stale)
 }
-Copy-IfMissing (Join-Path $Root 'utils\stremio\stremio-settings.ini') (Join-Path $cfg 'stremio-settings.ini')
+
+# Stremio Kai: UI webmods, scripts, script-opts, shaders, fonts (vendored).
+Copy-Tree (Join-Path $Root 'vendor\kai\portable_config') $cfg
+$player = Join-Path $Deps 'thedatabase-mpv\player\mpv.exe'
+if (Test-Path $player) {
+    New-Item -ItemType Directory -Force (Join-Path $cfg 'mpv') | Out-Null
+    Copy-Item -Force $player (Join-Path $cfg 'mpv\mpv.exe')
+} else { Write-Warning 'mpv.exe for thumbfast missing: run tools\fetch-deps.ps1' }
 
 # AnimeJaNai runtime. animejanai.conf is user state: only seeded once.
 $ajn = Join-Path $Deps 'animejanai-runtime'
@@ -89,8 +99,13 @@ Copy-Tree (Join-Path $ajn 'animejanai\onnx') (Join-Path $Out 'animejanai\onnx')
 Copy-IfMissing (Join-Path $ajn 'animejanai\animejanai.conf') (Join-Path $Out 'animejanai\animejanai.conf')
 Copy-Tree (Join-Path $ajn 'portable_config') $cfg
 
-# StremioZ overlay last: it owns mpv.conf / input.conf.
-Copy-Tree (Join-Path $Root 'overlay\portable_config') $cfg
+# StremioZ overlay last: it owns mpv.conf / input.conf. stremio-settings.ini
+# is user state (the app writes it), so it is only seeded.
+$overlay = Join-Path $Root 'overlay\portable_config'
+robocopy $overlay $cfg /E /XF stremio-settings.ini /NFL /NDL /NJH /NJS /NP /R:1 /W:1 | Out-Null
+if ($LASTEXITCODE -ge 8) { throw "robocopy overlay failed ($LASTEXITCODE)" }
+$global:LASTEXITCODE = 0
+Copy-IfMissing (Join-Path $overlay 'stremio-settings.ini') (Join-Path $cfg 'stremio-settings.ini')
 
 # ------------------------------------------------------------------ TensorRT
 if ($SetupTensorRT) {

@@ -161,6 +161,14 @@ void HandleEvent(const std::string &ev, std::vector<std::string> &args)
     } else if(ev=="mpv-set-prop"){
         // Allow list check
         std::string prop = args.empty() ? "" : ToLowerStr(args[0]);
+        // StremioZ: the decoder is chosen by AnimeJaNai's backend script
+        // (nvdec for TensorRT, d3d11va for DirectML) and kept by
+        // profile-manager.lua; the web player's hardware-decoding setting
+        // would silently replace it.
+        if(prop=="hwdec" || prop=="hwdec-codecs") {
+            std::cout<<"[MPV]: Ignoring web player "<<prop<<" (managed by StremioZ)\n";
+            return;
+        }
         if(!g_mpvSetPropAllowlist.count(prop)){
             std::string val = args.size() > 1 ? args[1] : "";
             AppendToCrashLog("[SECURITY]: BLOCKED mpv-set-prop => " + prop + " = " + val);

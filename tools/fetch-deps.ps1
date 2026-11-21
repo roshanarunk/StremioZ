@@ -46,6 +46,19 @@ if ($Force -or -not (Test-Path $stamp) -or (Get-Content $stamp) -ne $Comp.libmpv
     Write-Host "libmpv fork ready: $mpvDir ($($names.Count) exports)"
 } else { Write-Host 'libmpv fork: up to date' }
 
+# Standalone mpv.exe from the same release, for Kai's thumbfast seek previews
+# (script-opts/thumbfast.conf: mpv_path=portable_config/mpv/mpv.exe).
+$playerDir = Join-Path $Deps 'thedatabase-mpv\player'
+if ($Force -or -not (Test-Path (Join-Path $playerDir 'mpv.exe')) -or (Get-Content (Join-Path $playerDir '.tag') -ErrorAction SilentlyContinue) -ne $Comp.libmpv.tag) {
+    $c = $Comp.libmpv
+    $archive = Get-Asset $c.repo $c.tag $c.playerAsset $c.playerSha256
+    if (Test-Path $playerDir) { Remove-Item -Recurse -Force $playerDir }
+    & $SevenZip e -y "-o$playerDir" $archive 'mpv.exe' | Out-Null
+    if ($LASTEXITCODE -ne 0 -or -not (Test-Path (Join-Path $playerDir 'mpv.exe'))) { throw 'extracting mpv.exe failed' }
+    Set-Content (Join-Path $playerDir '.tag') $c.tag
+    Write-Host "mpv.exe ready: $playerDir"
+} else { Write-Host 'mpv.exe: up to date' }
+
 # ---------------------------------------------------------------- discord-rpc
 $discordDir = Join-Path $Deps 'discord-rpc'
 if ($Force -or -not (Test-Path (Join-Path $discordDir 'win64-static\lib\discord-rpc.lib'))) {

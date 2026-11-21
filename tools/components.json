@@ -8,7 +8,9 @@
     "files": [
       "libmpv-2.dll",
       "ajn-mvtools.dll"
-    ]
+    ],
+    "playerAsset": "mpv-x86_64-20261115-git-41868e1757.7z",
+    "playerSha256": "fa06b7c3f58181be098216e1bdfa20ad45d44c29b419e8c61f76d706d8309487"
   },
   "animejanai": {
     "repo": "the-database/mpv-AnimeJaNai",
@@ -26,5 +28,12 @@
     "version": "v4.20.15",
     "url": "https://dl.strem.io/server/v4.20.15/desktop/server.js",
     "sha256": "678332fecb0f2b22a7b65e3013afee065b43f8cf62c81bd3693b4d7ae664628d"
+  },
+  "kai": {
+    "_note": "Vendored in vendor/kai/portable_config (StremioZ edits marked 'StremioZ'). Scripts/webmods from the repo commit; shaders and fonts from the release archive.",
+    "repo": "allecsc/Stremio-Kai",
+    "commit": "a5a2a37e818fb5e9406caf65af374fa7fe7700af",
+    "release": "v4.8.0",
+    "releaseAsset": "Stremio-Kai_v4.8.0.7z"
   }
 }

@@ -58,6 +58,9 @@ int main(int argc, char *argv[]) {
       g_streamingServer = false;
     } else if (arg == "--autoupdater-force-full") {
       g_autoupdaterForceFull = true;
+    } else if (arg.rfind("--devtools-port=", 0) == 0) {
+      // StremioZ: opt-in Chrome DevTools Protocol port on localhost (testing)
+      g_devtoolsPort = std::atoi(arg.substr(16).c_str());
     }
   }
 

@@ -25,6 +25,7 @@ std::wstring  g_webuiUrl;
 // Command-line args
 bool g_streamingServer      = true;
 bool g_autoupdaterForceFull = false;
+int g_devtoolsPort = 0; // StremioZ
 
 // mpv
 mpv_handle* g_mpv = nullptr;

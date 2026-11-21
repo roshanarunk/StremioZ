@@ -1,2 +1,4 @@
 # Patches must apply byte-exact to upstream sources (LF).
 *.patch -text
+# Windows profile APIs (GetPrivateProfileString) need CRLF.
+*.ini text eol=crlf

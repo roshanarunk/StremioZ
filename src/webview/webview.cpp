@@ -203,9 +203,14 @@ void InitWebView2(HWND hWnd)
     // Setup environment
     Microsoft::WRL::ComPtr<ICoreWebView2EnvironmentOptions> options = Microsoft::WRL::Make<CoreWebView2EnvironmentOptions>();
     if(options){
-        options->put_AdditionalBrowserArguments(
-            L"--autoplay-policy=no-user-gesture-required --disable-features=msWebOOUI,msPdfOOUI,msSmartScreenProtection"
-        );
+        std::wstring browserArgs =
+            L"--autoplay-policy=no-user-gesture-required --disable-features=msWebOOUI,msPdfOOUI,msSmartScreenProtection";
+        // StremioZ: --devtools-port=N exposes the web UI to DevTools / CDP
+        // automation on localhost, for testing.
+        if (g_devtoolsPort > 0 && g_devtoolsPort < 65536) {
+            browserArgs += L" --remote-debugging-port=" + std::to_wstring(g_devtoolsPort);
+        }
+        options->put_AdditionalBrowserArguments(browserArgs.c_str());
         Microsoft::WRL::ComPtr<ICoreWebView2EnvironmentOptions6> options6;
         if(SUCCEEDED(options.As(&options6))) {
             options6->put_AreBrowserExtensionsEnabled(TRUE);
