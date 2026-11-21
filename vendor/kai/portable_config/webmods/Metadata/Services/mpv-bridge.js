@@ -137,6 +137,14 @@
       localStorage.getItem("stremioz-upscaler") ||
       "ajn-balanced";
 
+    // StremioZ: NVIDIA RTX Video
+    const videoPipeline =
+      window.MpvSettings?.getVideoPipeline?.() ||
+      localStorage.getItem("stremioz-video-pipeline") ||
+      "auto";
+    const rtxHdr = localStorage.getItem("stremioz-rtx-hdr") !== "false";
+    const rtxVsr = localStorage.getItem("stremioz-rtx-vsr") !== "false";
+
     const colorProfile =
       window.MpvSettings?.getColorProfile?.() ||
       localStorage.getItem("kai-color-profile") ||
@@ -166,6 +174,9 @@
       hdr_passthrough: hdrPassthrough,
       shader_preset: shaderPreset,
       upscaler: upscaler,
+      video_pipeline: videoPipeline,
+      rtx_hdr: rtxHdr,
+      rtx_vsr: rtxVsr,
       color_profile: colorProfile,
       icc_profile: iccProfile,
       // New fields
@@ -181,7 +192,7 @@
       metadata,
     ]);
     console.log(
-      `[MPV Bridge] Sent: ${imdbId} → anime:${isAnime}, Type:${contentType}, Audio:${audioPreset}, HDR:${hdrPassthrough} (Peak:${targetPeak}), Upscaler:${upscaler}, Color:${colorProfile}, ICC:${iccProfile}, Ultrawide:${ultrawideZoom}`,
+      `[MPV Bridge] Sent: ${imdbId} → anime:${isAnime}, Type:${contentType}, Audio:${audioPreset}, HDR:${hdrPassthrough} (Peak:${targetPeak}), Upscaler:${upscaler}, Pipeline:${videoPipeline} (RTX HDR:${rtxHdr}, VSR:${rtxVsr}), Color:${colorProfile}, ICC:${iccProfile}, Ultrawide:${ultrawideZoom}`,
     );
   }
 

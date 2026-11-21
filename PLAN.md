@@ -104,7 +104,7 @@ Pinned component versions live in one manifest. TensorRT is installed at first r
 | 0 | ✅ Repo + build the Community shell locally (vcpkg deps, CMake, VS 2026) | stock shell runs from our tree |
 | 1 | ✅ Swap in the-database libmpv; add the AnimeJaNai 3.12 runtime overlay | AnimeJaNai TensorRT upscaling works inside our Stremio (CUDA path). Verified 2026-11-20: 1080p→2160p V3.1 Balanced on native kernels, RTX 5070 Ti |
 | 2 | ✅ Merge Kai overlay (UI, scripts); resolve mpv.conf; one vf-chain owner; drop SVP | Kai UI + automation working on top of AnimeJaNai. Verified 2026-11-20 (local files + simulated Stremio metadata; real streams need a signed-in account). RIFE interpolation deferred: needs the 460 MB RIFE component |
-| 3 | Stage A chain (DirectML → RTX HDR), HDR output checks | upscaled + RTX HDR picture on an HDR display |
+| 3 | ✅ Stage A chain (DirectML → RTX HDR), HDR output checks | Verified 2026-11-20: the chain produces 2160p BT.2020/PQ at 24 fps with no drops (5070 Ti). The pipeline, settings and display-HDR detection are in place. Not yet seen on a real HDR display: Windows HDR was off on both monitors during testing. |
 | 4 | Stage B: TensorRT on D3D11 frames (CUDA↔D3D11 interop) | TensorRT AnimeJaNai → RTX HDR in real time at 4K |
 | 5 | Native gamepad + focus engine + TV mode + on-screen keyboard | whole app usable with only a pad, no mouse/keyboard |
 | 6 | Settings UI for all of it (in Kai's settings pages), installer, updater, branding | one-click installer |

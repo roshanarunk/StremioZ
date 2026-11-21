@@ -71,6 +71,8 @@ set(SOURCES
         src/stremioz/animejanai_env.cpp
         src/stremioz/webui.h
         src/stremioz/webui.cpp
+        src/stremioz/display_hdr.h
+        src/stremioz/display_hdr.cpp
 )
 
 add_executable(${PROJECT_NAME} WIN32 ${SOURCES})

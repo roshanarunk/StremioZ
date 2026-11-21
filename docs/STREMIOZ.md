@@ -61,6 +61,38 @@ The result is `dist\StremioZ\stremio.exe`, a portable folder.
 | `overlay/portable_config` | `mpv.conf`: AnimeJaNai defaults, then Kai's tuning, then Stremio overrides (no watch-later, no forced `alang`/`slang`). Keeps `gpu-api=vulkan` (CUDA interop).<br>`input.conf`: Kai's keys plus AnimeJaNai's, without SVP and without `q quit` |
 | server.js | Pinned to Stremio's current upload of v4.20.15. Community's recorded checksum is from an older upload. |
 
+## NVIDIA RTX Video (Phase 3)
+
+**Settings → Player → Video Pipeline** picks one of two pipelines. The choice is fixed per session, because mpv's renderer can't switch GPU API once it is open, and a change applies after a restart.
+
+| Pipeline | Renderer | Anime | Movies / series |
+|---|---|---|---|
+| **RTX Video** | D3D11, `hwdec=d3d11va` | AnimeJaNai on **DirectML** (D3D11 frames, `output-444=no`) → **RTX Video HDR** | **RTX Video Super Resolution** (scaled to the display height) + **RTX Video HDR**, in one `d3d11vpp` pass |
+| **AnimeJaNai TensorRT** | Vulkan, `hwdec=nvdec` | AnimeJaNai on TensorRT (CUDA frames) | unchanged |
+
+**Auto** (the default) picks RTX Video when the window's display is in Windows HDR mode at startup, and TensorRT otherwise.
+
+- The shell publishes that display state as `user-data/stremioz/display-hdr` (`src/stremioz/display_hdr.cpp`), using the monitor the window is on. It updates on display changes and moves.
+- RTX Video HDR is only added while that display is in HDR mode. On an SDR desktop it would just be tone-mapped back.
+- The toggles **RTX Video HDR** and **RTX Video Super Resolution** turn each feature off.
+
+**Not covered by RTX Video:**
+- HDR sources: Kai's HDR passthrough or tone-mapping handles them.
+- Anime4K: its CPU filters need copy-back frames, which the D3D11 video processor can't take.
+- Legacy interlaced SD.
+
+Measured on an RTX 5070 Ti, upscaling 1080p to 2160p:
+
+| Chain | 24 fps | 60 fps |
+|---|---|---|
+| DirectML Balanced + RTX HDR | no drops, GPU 34 %, 148 W | Balanced only runs up to 31 fps (AnimeJaNai's profile) |
+| DirectML Quality + RTX HDR | no drops, GPU 39 % | about half the frames dropped |
+| TensorRT Balanced | no drops, GPU 18 %, 89 W | (same 31 fps limit) |
+| TensorRT Quality | no drops, GPU 19 % | no drops, GPU 48 %, 187 W |
+| RTX VSR + RTX HDR (live action) | no drops (runs on the video engine) | |
+
+Phase 4 (TensorRT on D3D11 frames) is meant to remove the DirectML cost and the need for two pipelines.
+
 ## Keys in the player
 
 | Key | Action |
@@ -84,3 +116,5 @@ The upscaler for anime is chosen in **Settings → Player → Anime Upscaler** (
 - If a video starts while the window is minimized, the Vulkan output can't be created (0×0 surface) and that video plays without picture. `PauseOnMinimize=1`, the default, avoids most cases.
 - The local web UI has its own origin. Logins and Kai settings from a copy that loaded `stremio.zarg.me` don't carry over: sign in once.
 - Kai's welcome wizard still says "Stremio Kai" (branding is Phase 6).
+- RTX Video HDR output is tagged as 1000-nit HDR10. That's mpv's guess at NVIDIA's setting, and the real peak follows the RTX Video settings in the NVIDIA App.
+- On the RTX pipeline, AnimeJaNai's DirectML model takes about 1.5 s to start on each video (TensorRT's native kernels take about 0.1 s).

@@ -10,6 +10,7 @@
 #include "../utils/crashlog.h"
 #include "../utils/helpers.h"
 #include "../utils/config.h"
+#include "../stremioz/display_hdr.h"
 #include "../mpv/player.h"
 #include "../tray/tray.h"
 #include "../ui/splash.h"
@@ -384,8 +385,14 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT message, WPARAM wParam, LPARAM lParam)
             newRect->right - newRect->left,
             newRect->bottom - newRect->top,
             SWP_NOZORDER | SWP_NOACTIVATE);
+        PublishDisplayHdr(hWnd); // StremioZ: probably a different monitor
         break;
     }
+    // StremioZ: HDR toggles and monitor changes (see stremioz/display_hdr.h)
+    case WM_DISPLAYCHANGE:
+    case WM_EXITSIZEMOVE:
+        PublishDisplayHdr(hWnd);
+        return DefWindowProc(hWnd, message, wParam, lParam);
     case WM_NOTIFY_FLUSH: {
         if (g_isAppReady) {
             for(const auto& pendingMsg : g_outboundMessages) {
@@ -437,6 +444,7 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT message, WPARAM wParam, LPARAM lParam)
     case WM_SETTINGCHANGE:
     {
         UpdateTheme(hWnd);
+        PublishDisplayHdr(hWnd); // StremioZ
         break;
     }
     case WM_TRAYICON:

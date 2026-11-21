@@ -11,6 +11,7 @@
 
 #include "core/globals.h"
 #include "stremioz/webui.h"
+#include "stremioz/display_hdr.h"
 #include "mpv/player.h"
 #include "node/server.h"
 #include "tray/tray.h"
@@ -153,6 +154,7 @@ int main(int argc, char *argv[]) {
     DestroyWindow(g_hWnd);
     return 1;
   }
+  PublishDisplayHdr(g_hWnd); // StremioZ
 
   // node
   if (g_streamingServer) {

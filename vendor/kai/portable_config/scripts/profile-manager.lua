@@ -1,10 +1,15 @@
 --[[
   @name Profile Manager
   @description Hybrid profile system: static base profiles + dynamic layers
-  @version 8.0-stremioz
+  @version 8.1-stremioz
   @author allecsc (StremioZ changes marked "StremioZ")
 
   @changelog
+    v8.1-stremioz - NVIDIA RTX Video: per-session "rtx" pipeline (D3D11:
+           AnimeJaNai on DirectML -> RTX Video HDR; live action -> RTX Video
+           Super Resolution + HDR in one d3d11vpp pass) or "native" (AnimeJaNai
+           TensorRT on Vulkan). RTX HDR only while the window's display is in
+           Windows HDR mode (user-data/stremioz/display-hdr from the shell).
     v8.0-stremioz - Single owner of the video filter chain for StremioZ:
            - AnimeJaNai (native vf_animejanai) is the default anime upscaler; the
              filter string is read from mpv-animejanai.conf's [upscale-on] profile.
@@ -230,6 +235,106 @@ local stremio_metadata = nil
 -- Forward declaration
 local try_execute_profile
 
+-- ═══════════════════════════════════════════════════════════════════════════
+-- StremioZ: VIDEO PIPELINE (RTX Video HDR / Super Resolution)
+-- ═══════════════════════════════════════════════════════════════════════════
+-- NVIDIA RTX Video (d3d11vpp) needs D3D11 frames and a D3D11 renderer, while
+-- AnimeJaNai's TensorRT backend produces CUDA frames for a Vulkan renderer.
+-- The renderer's GPU API is fixed once mpv opens its video output, so the
+-- pipeline is chosen once per session, at the first file:
+--   "rtx"    gpu-api=d3d11, hwdec=d3d11va; AnimeJaNai runs on DirectML (D3D11
+--            frames) and can feed RTX Video HDR; live action gets RTX Video
+--            Super Resolution (+ HDR) from one d3d11vpp pass.
+--   "native" whatever AnimeJaNai's backend chose (TensorRT: nvdec + Vulkan).
+-- Setting "video_pipeline": "auto" (rtx when the window's display is in Windows
+-- HDR mode), "rtx", or "native". It is persisted so the next session starts
+-- with it even before Stremio's metadata arrives.
+
+local PIPELINE_FILE = "~~/cache/stremioz-pipeline.txt"
+local AJN_DML_CONF = "~~/../animejanai/animejanai-stremioz-directml.conf"
+local session_pipeline = nil   -- "rtx" / "native", fixed at the first file
+
+local function expand(path)
+    return mp.command_native({"expand-path", path})
+end
+
+local function read_text(path)
+    local f = io.open(expand(path), "r")
+    if not f then return nil end
+    local s = f:read("*a")
+    f:close()
+    return s
+end
+
+local function write_text(path, text)
+    local f = io.open(expand(path), "w")
+    if not f then log("Could not write " .. path); return false end
+    f:write(text)
+    f:close()
+    return true
+end
+
+local function display_is_hdr()
+    -- Published by the StremioZ shell (src/stremioz/display_hdr.cpp). Native
+    -- read: as a string, user-data comes back JSON-quoted ("\"yes\"").
+    return mp.get_property_native("user-data/stremioz/display-hdr") == "yes"
+end
+
+local function persist_pipeline_setting(value)
+    if value ~= "auto" and value ~= "rtx" and value ~= "native" then return end
+    local current = read_text(PIPELINE_FILE)
+    if current and current:match("^%s*(%S+)") == value then return end
+    write_text(PIPELINE_FILE, value .. "\n")
+end
+
+-- The user's animejanai.conf with backend=DirectML, so the Manager's custom
+-- slots keep working on the RTX pipeline. Rewritten each session.
+local function ensure_dml_conf(source_conf)
+    local text = read_text(source_conf) or "[global]\n"
+    local out, in_global, done = {}, false, false
+    for line in (text .. "\n"):gmatch("(.-)\r?\n") do
+        local section = line:match("^%s*%[(.-)%]")
+        if section then
+            if in_global and not done then out[#out + 1] = "backend=DirectML"; done = true end
+            in_global = section:lower() == "global"
+        end
+        if in_global and line:lower():match("^%s*backend%s*=") then
+            line = "backend=DirectML"; done = true
+        end
+        out[#out + 1] = line
+    end
+    if not done then table.insert(out, 1, "[global]"); table.insert(out, 2, "backend=DirectML") end
+    write_text(AJN_DML_CONF, table.concat(out, "\n"))
+end
+
+local function choose_pipeline(meta_setting)
+    local setting = meta_setting
+    if not setting then
+        local persisted = read_text(PIPELINE_FILE)
+        setting = persisted and persisted:match("^%s*(%S+)") or "auto"
+    end
+    if setting == "rtx" or setting == "native" then return setting, setting end
+    return display_is_hdr() and "rtx" or "native", "auto"
+end
+
+-- Called at the first start-file, before the video output exists.
+local function lock_pipeline(meta_setting)
+    if session_pipeline then return end
+    local setting
+    session_pipeline, setting = choose_pipeline(meta_setting)
+    if session_pipeline == "rtx" then
+        mp.set_property("gpu-api", "d3d11")
+        mp.set_property("hwdec", "d3d11va")
+    end
+    log(string.format("Video pipeline: %s (setting %s, display HDR %s, gpu-api %s, hwdec %s)",
+        session_pipeline, setting, tostring(display_is_hdr()),
+        mp.get_property("gpu-api"), mp.get_property("hwdec")))
+end
+
+local function rtx_hdr_active(meta)
+    return session_pipeline == "rtx" and meta.rtx_hdr ~= false and display_is_hdr()
+end
+
 -- Stremio metadata bridge
 mp.register_script_message("anime-metadata", function(json_str)
     stremio_metadata = utils.parse_json(json_str)
@@ -240,8 +345,13 @@ mp.register_script_message("anime-metadata", function(json_str)
             ", hdr=" .. tostring(stremio_metadata.hdr_passthrough) ..
             ", upscaler=" .. tostring(stremio_metadata.upscaler or stremio_metadata.shader_preset) ..
             ", osd=" .. tostring(stremio_metadata.osd_profile_messages) ..
-            ", uw=" .. tostring(stremio_metadata.ultrawide_zoom))
-            
+            ", uw=" .. tostring(stremio_metadata.ultrawide_zoom) ..
+            ", pipeline=" .. tostring(stremio_metadata.video_pipeline) ..
+            ", rtx_hdr=" .. tostring(stremio_metadata.rtx_hdr) ..
+            ", rtx_vsr=" .. tostring(stremio_metadata.rtx_vsr))
+        -- StremioZ: remember the pipeline choice for the next session's start.
+        persist_pipeline_setting(stremio_metadata.video_pipeline)
+
         state.metadata_ready = true
         state.metadata_arrival = mp.get_time() -- Track arrival time to prevent race-condition wipes
         
@@ -328,21 +438,64 @@ end
 
 -- StremioZ: SVP sync policy removed along with SVP.
 
--- StremioZ: insert AnimeJaNai with the chosen built-in slot.
-local function apply_animejanai(slot)
+-- StremioZ: insert AnimeJaNai with the chosen built-in slot. On the RTX
+-- pipeline it runs on DirectML (D3D11 frames) with 4:2:x output, which the
+-- D3D11 video processor accepts, optionally followed by RTX Video HDR.
+local dml_conf_ready = false
+local function apply_animejanai(slot, with_rtx_hdr)
     local vf = ajn_vf_string()
     if not vf then
         log("AnimeJaNai filter string not found (mpv-animejanai.conf missing?)")
         return false
     end
     vf = vf:gsub("slot=%d+", "slot=" .. slot)
-    log("Appending VF: AnimeJaNai slot " .. slot)
+    if session_pipeline == "rtx" then
+        if not dml_conf_ready then
+            ensure_dml_conf(vf:match("conf=([^:]+)") or "~~/../animejanai/animejanai.conf")
+            dml_conf_ready = true
+        end
+        vf = vf:gsub("conf=[^:]+", "conf=" .. AJN_DML_CONF) .. ":output-444=no"
+    end
+    log("Appending VF: AnimeJaNai slot " .. slot .. (session_pipeline == "rtx" and " (DirectML)" or ""))
     mp.commandv("vf", "append", vf)
     -- Not sending "script-message aji-slot": animejanai_slot.lua answers it
     -- with "seek 0 exact" while paused, which would drop Stremio's resume
     -- position. The slot is already in the filter string.
-    mp.set_property("glsl-shaders", AJN_SHADERS)
+    if with_rtx_hdr then
+        mp.commandv("vf", "append", "@rtx:d3d11vpp=nvidia-true-hdr")
+        mp.set_property("target-colorspace-hint", "yes")
+        log("Appending VF: RTX Video HDR")
+    else
+        -- AnimeJaNai's grain is tuned for SDR; not applied to RTX HDR output.
+        mp.set_property("glsl-shaders", AJN_SHADERS)
+    end
     return true
+end
+
+-- StremioZ: RTX Video Super Resolution and/or HDR for live action, in one
+-- d3d11vpp pass. Returns the OSD labels it applied.
+local function apply_rtx_video(height, want_vsr, want_hdr)
+    local parts, labels = {}, {}
+    if want_vsr then
+        local display_h = tonumber(mp.get_property("display-height")) or 2160
+        local scale = math.min(display_h / math.max(height, 1), 4)
+        if scale > 1.05 then
+            parts[#parts + 1] = string.format("scale=%.3f", scale)
+            parts[#parts + 1] = "scaling-mode=nvidia"
+            labels[#labels + 1] = "RTX VSR"
+        end
+    end
+    if want_hdr then
+        parts[#parts + 1] = "nvidia-true-hdr"
+        labels[#labels + 1] = "RTX HDR"
+        mp.set_property("target-colorspace-hint", "yes")
+    end
+    if #parts > 0 then
+        local vf = "@rtx:d3d11vpp=" .. table.concat(parts, ":")
+        log("Appending VF: " .. vf)
+        mp.commandv("vf", "append", vf)
+    end
+    return labels
 end
 
 -- Apply HDR passthrough settings (for HDR displays)
@@ -720,18 +873,27 @@ function try_execute_profile()
         end
     end
     
-    if is_passthrough_active then
+    -- StremioZ: RTX Video on SDR sources (RTX pipeline only). Anime4K's CPU
+    -- filters need copy-back frames, which the D3D11 video processor can't take.
+    local rtx_ok = session_pipeline == "rtx" and not is_hdr and
+                   not (is_anime and upscaler.kind == "a4k") and not is_legacy_anime
+    local use_rtx_hdr = rtx_ok and rtx_hdr_active(meta)
+    local use_rtx_vsr = rtx_ok and not is_anime and meta.rtx_vsr ~= false
+
+    if is_passthrough_active or use_rtx_hdr then
         color_profile = "original"
-        log("HDR Passthrough: Forcing 'original' colors")
+        log((use_rtx_hdr and "RTX Video HDR" or "HDR Passthrough") .. ": Forcing 'original' colors")
     end
-    
-    apply_visual_settings(color_profile, icc_profile_enabled, is_passthrough_active, false)
-    
+
+    apply_visual_settings(color_profile, icc_profile_enabled, is_passthrough_active or use_rtx_hdr, false)
+
     if is_anime then
         if upscaler.kind == "ajn" then
             -- Legacy interlaced SD: GPU deinterlacing keeps frames on the GPU.
             if is_legacy_anime then mp.set_property("deinterlace", "yes") end
-            if not apply_animejanai(upscaler.slot) then
+            if apply_animejanai(upscaler.slot, use_rtx_hdr) then
+                if use_rtx_hdr then table.insert(osd_parts, "RTX HDR") end
+            else
                 apply_anime_shaders("optimized", is_legacy_anime, is_hdr and hdr_passthrough)
             end
         elseif upscaler.kind == "a4k" then
@@ -739,7 +901,11 @@ function try_execute_profile()
             apply_anime_vf(is_legacy_anime)
         elseif is_legacy_anime then
             apply_anime_vf(true)
+        elseif use_rtx_hdr then
+            for _, l in ipairs(apply_rtx_video(height, false, true)) do table.insert(osd_parts, l) end
         end
+    elseif use_rtx_vsr or use_rtx_hdr then
+        for _, l in ipairs(apply_rtx_video(height, use_rtx_vsr, use_rtx_hdr)) do table.insert(osd_parts, l) end
     end
 
     audio_state.mode = meta.audio_preset or "off"
@@ -789,7 +955,15 @@ mp.register_event('start-file', function()
     state.params_cache = nil
     state.metadata_timed_out = false
     if state.metadata_timer then state.metadata_timer:kill(); state.metadata_timer = nil end
-    -- StremioZ: remember AnimeJaNai's decoder before anything changes it.
+    -- StremioZ: fix the video pipeline for this session before the first
+    -- video output opens (uses the setting from fresh metadata, else the
+    -- persisted one).
+    if not session_pipeline then
+        local fresh = state.metadata_ready and (mp.get_time() - (state.metadata_arrival or 0) < 2.0)
+        lock_pipeline(fresh and stremio_metadata and stremio_metadata.video_pipeline or nil)
+    end
+    -- StremioZ: remember AnimeJaNai's decoder (or the RTX pipeline's d3d11va)
+    -- before anything changes it.
     if not ajn_hwdec then
         ajn_hwdec = mp.get_property("hwdec")
         log("AnimeJaNai decoder: " .. tostring(ajn_hwdec))

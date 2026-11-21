@@ -29,6 +29,10 @@
     anime4kPreset: "kai-anime4k-preset",
     // StremioZ: one anime upscaler setting (AnimeJaNai / Anime4K / off)
     upscaler: "stremioz-upscaler",
+    // StremioZ: NVIDIA RTX Video
+    videoPipeline: "stremioz-video-pipeline",
+    rtxHdr: "stremioz-rtx-hdr",
+    rtxVsr: "stremioz-rtx-vsr",
     colorProfile: "kai-color-profile",
     iccProfile: "kai-icc-profile",
     // Smart Track Logic
@@ -444,6 +448,22 @@
     if (legacy === "none") return "off";
     if (legacy === "fast" || legacy === "hq") return "a4k-" + legacy;
     return "ajn-balanced";
+  }
+
+  // StremioZ: RTX Video settings
+  const VIDEO_PIPELINES = [
+    { value: "auto", label: "Auto (RTX Video when the display is in HDR mode)" },
+    { value: "rtx", label: "RTX Video (D3D11, AnimeJaNai on DirectML)" },
+    { value: "native", label: "AnimeJaNai TensorRT (Vulkan, no RTX Video)" },
+  ];
+  function getVideoPipeline() {
+    return localStorage.getItem(STORAGE_KEYS.videoPipeline) || "auto";
+  }
+  function getRtxHdr() {
+    return localStorage.getItem(STORAGE_KEYS.rtxHdr) !== "false"; // Default ON
+  }
+  function getRtxVsr() {
+    return localStorage.getItem(STORAGE_KEYS.rtxVsr) !== "false"; // Default ON
   }
 
   function setUpscaler(value) {
@@ -941,6 +961,42 @@
     );
     injectionFragment.appendChild(ultrawideToggle);
 
+    // StremioZ: NVIDIA RTX Video
+    const pipelineDropdown = createDropdownOption(
+      "Video Pipeline",
+      "RTX Video adds NVIDIA RTX Video HDR and Super Resolution. Applies after restarting StremioZ.",
+      VIDEO_PIPELINES,
+      getVideoPipeline(),
+      (val) => {
+        localStorage.setItem(STORAGE_KEYS.videoPipeline, val);
+        sendConfigUpdate();
+      },
+    );
+    pipelineDropdown.appendChild(
+      createNote(
+        "info",
+        "<strong>Note:</strong> RTX Video needs an NVIDIA RTX GPU. On it, AnimeJaNai runs on DirectML (about twice the GPU load of TensorRT; fine for 24&ndash;30 fps anime).",
+      ),
+    );
+    const rtxHdrToggle = createToggleOption(
+      "RTX Video HDR",
+      "Converts SDR video to HDR while the display is in Windows HDR mode (RTX Video pipeline).",
+      getRtxHdr(),
+      (val) => {
+        localStorage.setItem(STORAGE_KEYS.rtxHdr, val.toString());
+        sendConfigUpdate();
+      },
+    );
+    const rtxVsrToggle = createToggleOption(
+      "RTX Video Super Resolution",
+      "AI upscaling for movies and series (anime uses the Anime Upscaler). RTX Video pipeline.",
+      getRtxVsr(),
+      (val) => {
+        localStorage.setItem(STORAGE_KEYS.rtxVsr, val.toString());
+        sendConfigUpdate();
+      },
+    );
+
     // 2. Anime Enhancements section header
     const animeHeader = createSectionHeader(
       "Anime Enhancements",
@@ -990,6 +1046,9 @@
       hdrTargetPeakInput, // HDR Target Peak textbox
       iccToggle, // iccNote is already inside
       ultrawideToggle,
+      pipelineDropdown, // StremioZ
+      rtxHdrToggle,
+      rtxVsrToggle,
     );
 
     // Wrap Anime Section
@@ -1391,6 +1450,9 @@
   window.MpvSettings.getHdrPassthrough = getHdrPassthrough;
   window.MpvSettings.getAnime4kPreset = getAnime4kPreset;
   window.MpvSettings.getUpscaler = getUpscaler;
+  window.MpvSettings.getVideoPipeline = getVideoPipeline;
+  window.MpvSettings.getRtxHdr = getRtxHdr;
+  window.MpvSettings.getRtxVsr = getRtxVsr;
   window.MpvSettings.getColorProfile = getColorProfile;
   window.MpvSettings.getIccProfile = getIccProfile;
 
