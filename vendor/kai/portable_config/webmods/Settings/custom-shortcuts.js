@@ -101,12 +101,17 @@
     {
       name: "AnimeJaNai Quality / Balanced / Performance",
       keys: ["Shift", "+", "1", "/", "2", "/", "3"],
-      description: "Switches the AI upscaling model for this video.",
+      description: "Switches the AI upscaling model now; anime videos after this one use it too.",
     },
     {
       name: "AnimeJaNai Off",
       keys: ["Ctrl", "+", "0"],
-      description: "Stops AI upscaling for this video.",
+      description: "Stops AI upscaling for this video (and later anime).",
+    },
+    {
+      name: "RTX Video HDR On / Off",
+      keys: ["Ctrl", "+", "H"],
+      description: "Switches RTX HDR now; later videos follow. Needs Windows HDR on the display.",
     },
     {
       name: "AnimeJaNai Manager",
@@ -192,7 +197,7 @@
       description: "Board → Discover → Library → Calendar → Addons → Settings.",
     },
     { name: "Jump Up / Down", keys: ["LT", "/", "RT"] },
-    { name: "Scroll", keys: ["R-Stick"] },
+    { name: "Scroll", keys: ["R-Stick"], description: "The highlight moves with the list." },
     { name: "Show / Hide Button Hints", keys: ["View"] },
     {
       name: "On-screen Keyboard",
@@ -206,7 +211,7 @@
     { name: "Seek 10s", keys: ["◀", "/", "▶"], description: "Hold to keep seeking." },
     { name: "Seek 85s", keys: ["LT", "/", "RT"] },
     { name: "Speed −/+ 0.25", keys: ["LB", "/", "RB"] },
-    { name: "Player Menu", keys: ["Y", "/", "△"], description: "Subtitles, audio, speed, AnimeJaNai preset, next episode." },
+    { name: "Player Menu", keys: ["Y", "/", "△"], description: "Subtitles, audio, speed, AnimeJaNai preset, RTX HDR, next episode." },
     { name: "Control Bar", keys: ["▲"], description: "▼ hides it again." },
     { name: "Skip Intro", keys: ["X", "/", "☐"] },
     { name: "Next Episode", keys: ["Start"] },

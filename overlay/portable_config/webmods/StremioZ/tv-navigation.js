@@ -158,7 +158,7 @@
     try {
       el.focus({ preventScroll: true });
     } catch (e) {}
-    el.scrollIntoView({ block: opts.block || "nearest", inline: "nearest", behavior: "smooth" });
+    if (!opts.noScroll) el.scrollIntoView({ block: opts.block || "nearest", inline: "nearest", behavior: "smooth" });
     const row = rowOf(el);
     if (row) rowMemory.set(row, el);
   }
@@ -256,6 +256,40 @@
 
   // probe: an instant scroll to make lazily rendered rows appear, and only
   // when a good amount is left that way (not just trailing padding).
+  // The innermost scrollable ancestor in a direction (null: the page).
+  function scrollerOf(el, vertical) {
+    for (; el && el !== document.body; el = el.parentElement) {
+      const cs = getComputedStyle(el);
+      if (vertical && /(auto|scroll)/.test(cs.overflowY) && el.scrollHeight > el.clientHeight + 4) return el;
+      if (!vertical && /(auto|scroll)/.test(cs.overflowX) && el.scrollWidth > el.clientWidth + 4) return el;
+    }
+    return null;
+  }
+
+  // First focus on a page with an episode or stream list. Stremio scrolls an
+  // episode list to the episode you're on (centred) when a show opens; follow
+  // it instead of going back to episode 1: the in-progress episode if it is
+  // in view, else the one nearest the middle. An unscrolled list: the first.
+  function pickPrimary(list) {
+    const prim = list.filter((el) => el.matches(PRIMARY) || el.parentElement?.matches(PRIMARY));
+    if (!prim.length) return null;
+    const box = scrollerOf(prim[0], true);
+    if (!box || box.scrollTop < 8) return prim[0];
+    const br = box.getBoundingClientRect();
+    const inView = prim.filter((el) => {
+      const r = el.getBoundingClientRect();
+      return r.bottom > br.top + 8 && r.top < br.bottom - 8;
+    });
+    const watching = inView.find((el) => el.querySelector('[class*="progress"]'));
+    if (watching) return watching;
+    const mid = br.top + br.height / 2;
+    const dist = (el) => {
+      const r = el.getBoundingClientRect();
+      return Math.abs(r.top + r.height / 2 - mid);
+    };
+    return inView.sort((a, b) => dist(a) - dist(b))[0] || prim[0];
+  }
+
   function scrollStep(dir, probe = false) {
     const dy = dir === "down" ? 1 : dir === "up" ? -1 : 0;
     const dx = dir === "right" ? 1 : dir === "left" ? -1 : 0;
@@ -284,8 +318,8 @@
     if (!list.length) return;
     const cur = current(scope);
     if (!cur) {
-      const primary = !scope && list.find((el) => el.matches(PRIMARY) || el.parentElement?.matches(PRIMARY));
-      if (primary) return setFocus(primary, { block: "center" });
+      const primary = !scope && pickPrimary(list);
+      if (primary) return setFocus(primary, { noScroll: true });
       // Nothing focused: the first thing on screen, top-left first.
       // Content first: the nav bars are one press away.
       const nav = (el) => el.closest('nav, header, [class*="horizontal-nav-bar-"], [class*="vertical-nav-bar-"]');
@@ -444,7 +478,7 @@
     setTimeout(() => {
       // The keyboard or quick menu opened meanwhile (X opens search + keyboard).
       if (document.querySelector(".szt-osk, .szt-quick")) return;
-      if (mem && mem.isConnected && shown(mem)) setFocus(mem, { block: "center" });
+      if (mem && mem.isConnected && shown(mem)) setFocus(mem);
       else focusFresh();
       renderHints();
     }, 300);
@@ -522,19 +556,26 @@
   }
 
   // ───────────────────────────── player quick menu
+  // Upscaler and RTX HDR choices also become the defaults for the next video
+  // (profile-manager publishes them; player-prefs.js saves them).
   const sendUpscaler = (k) => mpvCmd("script-message-to", "profile_manager", "stremioz-set-upscaler", k);
+  const sendRtxHdr = (on) => mpvCmd("script-message-to", "profile_manager", "stremioz-set-rtx-hdr", on ? "yes" : "no");
   function quickOpen() {
     quickClose();
+    const prefs = window.StremioZPrefs;
+    const ups = prefs ? prefs.upscaler() : null;
+    const rtx = prefs ? prefs.rtxHdr() : true;
     const items = [
       ["Subtitles", () => key("s", "KeyS")],
       ["Audio", () => key("a", "KeyA")],
       ["Speed 1×", () => (mpvSet("speed", 1), toast("Speed 1×"))],
       ["Speed 1.5×", () => (mpvSet("speed", 1.5), toast("Speed 1.5×"))],
       ["Speed 2×", () => (mpvSet("speed", 2), toast("Speed 2×"))],
-      ["AnimeJaNai Quality", () => sendUpscaler("ajn-quality")],
-      ["AnimeJaNai Balanced", () => sendUpscaler("ajn-balanced")],
-      ["AnimeJaNai Performance", () => sendUpscaler("ajn-performance")],
-      ["Upscaling off", () => sendUpscaler("off")],
+      ["AnimeJaNai Quality", () => sendUpscaler("ajn-quality"), ups === "ajn-quality"],
+      ["AnimeJaNai Balanced", () => sendUpscaler("ajn-balanced"), ups === "ajn-balanced"],
+      ["AnimeJaNai Performance", () => sendUpscaler("ajn-performance"), ups === "ajn-performance"],
+      ["Upscaling off", () => sendUpscaler("off"), ups === "off"],
+      [rtx ? "RTX HDR: on" : "RTX HDR: off", () => sendRtxHdr(!rtx), rtx],
       ["Skip intro", () => mpvCmd("script-message-to", "notify_skip", "perform-skip")],
       ["Next episode", nextEpisode],
       ["Episode list", () => key("i", "KeyI")],
@@ -542,10 +583,10 @@
     const q = document.createElement("div");
     q.className = "szt-quick";
     q.innerHTML = `<div class="szt-quick-title">Player</div>`;
-    items.forEach(([label, fn]) => {
+    items.forEach(([label, fn, on]) => {
       const b = document.createElement("button");
       b.type = "button";
-      b.className = "szt-quick-item";
+      b.className = "szt-quick-item" + (on ? " on" : "");
       b.textContent = label;
       b.addEventListener("click", (e) => {
         e.preventDefault();
@@ -699,7 +740,63 @@
     if (focused) focused.classList.remove("szt-focus");
     focused = null;
     document.activeElement?.blur();
-    setTimeout(() => !current() && move("down"), 350);
+    whenSettled(() => !current() && move("down"));
+  }
+
+  // Run fn once the page has rendered and stopped scrolling by itself (a
+  // detail page loads its data, then Stremio scrolls the episode list), so
+  // the first focus doesn't fight that scroll. At most 2.5 s.
+  function whenSettled(fn) {
+    const start = performance.now();
+    let last = null,
+      still = 0;
+    const tick = () => {
+      const list = document.querySelector('[class*="videos-container-"], [class*="streams-container-"]');
+      const pos = list ? list.scrollTop : -1;
+      still = pos === last ? still + 1 : 0;
+      last = pos;
+      const t = performance.now() - start;
+      const waitList = hash().startsWith("#/detail/") && !list;
+      if ((t > 400 && still >= 3 && !waitList) || t > 2500) fn();
+      else setTimeout(tick, 100);
+    };
+    setTimeout(tick, 100);
+  }
+
+  // Right stick: scroll, then move the highlight to whatever now sits where
+  // it was on screen, within the same list (TV-style), once scrolling stops.
+  let stick = null;
+  function stickScroll(dir, scope) {
+    const vertical = dir === "up" || dir === "down";
+    const cur = current(scope);
+    if (!stick && cur) {
+      const r = cur.getBoundingClientRect();
+      stick = { x: r.left + r.width / 2, y: r.top + r.height / 2, box: scrollerOf(cur, vertical) };
+    }
+    scrollStep(dir);
+    if (!stick) return;
+    clearTimeout(stick.timer);
+    stick.timer = setTimeout(() => {
+      const { x, y, box } = stick;
+      stick = null;
+      const br = box ? box.getBoundingClientRect() : { top: 0, bottom: innerHeight, left: 0, right: innerWidth };
+      const near = candidates(scope)
+        .filter((el) => !box || box.contains(el))
+        .filter((el) => {
+          const r = el.getBoundingClientRect();
+          const cx = r.left + r.width / 2,
+            cy = r.top + r.height / 2;
+          return cy > br.top && cy < br.bottom && cx > br.left && cx < br.right;
+        })
+        .sort((a, b) => {
+          const d = (el) => {
+            const r = el.getBoundingClientRect();
+            return Math.hypot(r.left + r.width / 2 - x, r.top + r.height / 2 - y);
+          };
+          return d(a) - d(b);
+        })[0];
+      if (near) setFocus(near, { noScroll: true });
+    }, 420);
   }
 
   function cyclePage(step) {
@@ -827,7 +924,7 @@
       case "rs_down":
       case "rs_left":
       case "rs_right":
-        return scrollStep(b.slice(3));
+        return stickScroll(b.slice(3), scope);
       case "back":
         if (!repeat) {
           localStorage.setItem(STORE.hints, String(!lsGet(STORE.hints, true)));

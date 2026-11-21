@@ -140,10 +140,10 @@ Any controller SDL3 knows works (Xbox, PlayStation, Switch Pro, most generic pad
 | A | Select; on a text field, on-screen keyboard; on a dropdown, a list | Play / pause |
 | B | Close menu or dialog, else back | Close menu, else leave the player |
 | X | Search (opens the keyboard) | Skip intro |
-| Y | Home | Player menu: subtitles, audio, speed, AnimeJaNai preset, next episode, episode list |
+| Y | Home | Player menu: subtitles, audio, speed, AnimeJaNai preset, RTX HDR on/off, next episode, episode list |
 | LB / RB | Previous / next page (Board, Discover, Library, Calendar, Addons, Settings) | Speed −/+ 0.25 |
 | LT / RT | Jump three items up / down | Seek −/+ 85 s |
-| Right stick | Scroll | ▲ ▼ volume |
+| Right stick | Scroll; the highlight moves with the list | ▲ ▼ volume |
 | Start | Done (keyboard) | Next episode |
 | View | Show / hide the button hints | Episode list |
 | L3 / R3 | | Subtitle / audio menu |
@@ -156,7 +156,7 @@ The first controller press turns on TV mode:
 
 The hints fade after 5 idle seconds and return on the next press.
 
-Focus is remembered per page, so Back returns to the poster you left. A menu opened from any button (L3/R3, the player menu's Subtitles or Audio) gets focus on its first item.
+Focus is remembered per page, so Back returns to the poster you left. When a show opens, Stremio scrolls its episode list to the episode you're on. The first focus waits for that scroll and lands on that episode (the one in progress, else the one in the middle), instead of going back to episode 1. A menu opened from any button (L3/R3, the player menu's Subtitles or Audio) gets focus on its first item.
 
 Stremio's web UI turns Escape into "back" unless a component handles it, and the player's subtitle, audio and speed menus and the episode drawer don't. Escape there used to leave the stream. StremioZ closes the menu instead, for B and for a keyboard's Esc alike.
 
@@ -180,6 +180,7 @@ The list is cached for 12 hours, or until the set of your top titles changes. Th
 | Ctrl+E | AnimeJaNai Manager (profiles, backend) |
 | Shift+1 / 2 / 3 | AnimeJaNai Quality / Balanced / Performance (this video, anime or not) |
 | Ctrl+0 | Upscaling off (this video) |
+| Ctrl+H | RTX Video HDR on / off (needs Windows HDR on the display) |
 | Ctrl+Shift+← / → | Seek −/+ 85 s (skip an opening) |
 | Ctrl+Shift+↑ / ↓, Ctrl+Shift+Home | Speed +/− 0.25, back to 1× |
 | Ctrl+Shift+1 … 9 | AnimeJaNai custom slots |
@@ -190,7 +191,7 @@ The list is cached for 12 hours, or until the set of your top titles changes. Th
 | Tab | Skip intro (when offered) |
 | T | Stats |
 
-The upscaler for anime is chosen in **Settings → Player → Anime Upscaler** (default: AnimeJaNai Balanced) and applies from the next video.
+The upscaler for anime is chosen in **Settings → Player → Anime Upscaler** (default: AnimeJaNai Balanced). Switching while watching (Shift+1/2/3, Ctrl+0, or the controller's player menu) applies at once and **becomes the new default**: the next anime starts with it, and Settings shows it. RTX Video HDR works the same way (Ctrl+H or the player menu; Settings → Player → RTX Video HDR). Turning upscaling off on a video that isn't anime doesn't change the anime default. Local files and plain URLs, which come without Stremio's metadata, use the same defaults (`portable_config/cache/stremioz-defaults.json`).
 
 ## Known issues
 

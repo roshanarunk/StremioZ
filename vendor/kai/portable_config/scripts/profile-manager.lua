@@ -1,10 +1,16 @@
 --[[
   @name Profile Manager
   @description Hybrid profile system: static base profiles + dynamic layers
-  @version 8.3-stremioz
+  @version 8.4-stremioz
   @author allecsc (StremioZ changes marked "StremioZ")
 
   @changelog
+    v8.4-stremioz - "stremioz-set-rtx-hdr yes|no|toggle" switches RTX Video HDR
+           for the current video. Manual upscaler / RTX HDR choices are
+           published as user-data/stremioz/upscaler-choice and rtx-hdr-choice
+           ("value#n"); StremioZ's web side saves them as the defaults for the
+           next video. They are also kept in ~~/cache/stremioz-defaults.json for
+           videos that arrive without Stremio metadata (local files, URLs).
     v8.3-stremioz - "stremioz-set-upscaler <key>" script message: switches the
            upscaler for the current video and re-applies the chain, on any
            video (a manual choice also upscales non-anime). Used by the preset
@@ -287,6 +293,23 @@ local function display_is_hdr()
     return mp.get_property_native("user-data/stremioz/display-hdr") == "yes"
 end
 
+-- StremioZ: the upscaler / RTX Video defaults, for videos without Stremio
+-- metadata (local files, plain URLs). Kept in step with the metadata's
+-- settings and with manual choices.
+local DEFAULTS_FILE = "~~/cache/stremioz-defaults.json"
+local function load_defaults()
+    local s = read_text(DEFAULTS_FILE)
+    return (s and utils.parse_json(s)) or {}
+end
+local function save_defaults(changes)
+    local d = load_defaults()
+    local changed = false
+    for k, v in pairs(changes) do
+        if v ~= nil and d[k] ~= v then d[k] = v; changed = true end
+    end
+    if changed then write_text(DEFAULTS_FILE, utils.format_json(d)) end
+end
+
 local function persist_pipeline_setting(value)
     if value ~= "auto" and value ~= "rtx" and value ~= "native" then return end
     local current = read_text(PIPELINE_FILE)
@@ -325,8 +348,22 @@ local function lock_pipeline(meta_setting)
         mp.get_property("gpu-api"), mp.get_property("hwdec")))
 end
 
+local function rtx_hdr_wanted(meta)
+    -- StremioZ: a choice made during this video wins over the setting.
+    if state.override_rtx_hdr ~= nil then return state.override_rtx_hdr end
+    return meta.rtx_hdr ~= false
+end
+
 local function rtx_hdr_active(meta)
-    return session_pipeline == "rtx" and meta.rtx_hdr ~= false and display_is_hdr()
+    return session_pipeline == "rtx" and rtx_hdr_wanted(meta) and display_is_hdr()
+end
+
+-- StremioZ: tell the web UI about a manual choice so it becomes the default.
+-- The counter makes every choice a property change, even a repeated one.
+local choice_counter = 0
+local function publish_choice(name, value)
+    choice_counter = choice_counter + 1
+    mp.set_property_native("user-data/stremioz/" .. name, value .. "#" .. choice_counter)
 end
 
 -- Stremio metadata bridge
@@ -345,6 +382,9 @@ mp.register_script_message("anime-metadata", function(json_str)
             ", rtx_vsr=" .. tostring(stremio_metadata.rtx_vsr))
         -- StremioZ: remember the pipeline choice for the next session's start.
         persist_pipeline_setting(stremio_metadata.video_pipeline)
+        save_defaults({ upscaler = stremio_metadata.upscaler,
+                        rtx_hdr = stremio_metadata.rtx_hdr,
+                        rtx_vsr = stremio_metadata.rtx_vsr })
 
         state.metadata_ready = true
         state.metadata_arrival = mp.get_time() -- Track arrival time to prevent race-condition wipes
@@ -800,7 +840,8 @@ function try_execute_profile()
     -- ═══════════════════════════════════════════════════════════════════════
     
     -- Get preferences (safely handle nil if metadata never arrived)
-    local meta = stremio_metadata or {}
+    -- StremioZ: without Stremio metadata, the saved upscaler / RTX defaults.
+    local meta = stremio_metadata or load_defaults()
     local hdr_passthrough = meta.hdr_passthrough or false
     local color_profile = meta.color_profile or "kai"
     local icc_profile_enabled = meta.icc_profile
@@ -811,6 +852,7 @@ function try_execute_profile()
     -- StremioZ: one upscaler setting. Older payloads only carry Kai's
     -- shader_preset; map it so a Kai-era profile keeps working.
     local upscaler_key = state.override_upscaler or meta.upscaler
+    state.detected_anime = is_anime
     if state.override_upscaler and state.override_upscaler ~= "off" and not is_anime then
         -- StremioZ: an upscaler chosen by hand (keys / controller quick menu)
         -- applies even when the file wasn't detected as anime.
@@ -933,9 +975,35 @@ mp.register_script_message("stremioz-set-upscaler", function(key)
     end
     state.override_upscaler = key
     mp.osd_message(key == "off" and "Upscaler: off" or ("Upscaler: " .. (UPSCALERS[key].label or key)), 2)
+    -- The anime default follows the last choice; "off" on a video that isn't
+    -- anime says nothing about anime.
+    if key ~= "off" or state.detected_anime then
+        publish_choice("upscaler-choice", key)
+        save_defaults({ upscaler = key })
+    end
     if state.video_params_ready then
         state.profile_applied = false
         state.metadata_timed_out = true   -- don't wait for metadata again
+        try_execute_profile()
+    end
+end)
+
+-- StremioZ: RTX Video HDR on/off for this video (player menu, Ctrl+H).
+mp.register_script_message("stremioz-set-rtx-hdr", function(value)
+    local meta = stremio_metadata or load_defaults()
+    local on
+    if value == "toggle" then on = not rtx_hdr_wanted(meta)
+    else on = (value == "yes" or value == "true" or value == "on") end
+    state.override_rtx_hdr = on
+    publish_choice("rtx-hdr-choice", on and "yes" or "no")
+    save_defaults({ rtx_hdr = on })
+    local note = ""
+    if on and session_pipeline ~= "rtx" then note = " (needs the RTX Video pipeline: Settings > Player)"
+    elseif on and not display_is_hdr() then note = " (turn on Windows HDR for this display)" end
+    mp.osd_message("RTX HDR: " .. (on and "on" or "off") .. note, 3)
+    if state.video_params_ready then
+        state.profile_applied = false
+        state.metadata_timed_out = true
         try_execute_profile()
     end
 end)
@@ -968,6 +1036,8 @@ mp.register_event('start-file', function()
     state.params_cache = nil
     state.metadata_timed_out = false
     state.override_upscaler = nil
+    state.override_rtx_hdr = nil
+    state.detected_anime = nil
     if state.metadata_timer then state.metadata_timer:kill(); state.metadata_timer = nil end
     -- StremioZ: fix the video pipeline for this session before the first
     -- video output opens (uses the setting from fresh metadata, else the

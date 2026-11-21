@@ -131,6 +131,13 @@ body.szt-tv .szt-hints:not(:empty) {
   font: 600 clamp(15px, 2.4vh, 20px) / 1.2 "Montserrat", "Segoe UI", sans-serif;
   text-align: left;
 }
+/* The current default (upscaler preset) / a setting that is on (RTX HDR). */
+.szt-quick-item.on::after {
+  content: "✓";
+  float: right;
+  margin-left: 18px;
+  color: #a58bff;
+}
 .szt-quick-item.szt-focus {
   background: rgba(140, 108, 255, 0.25);
 }
