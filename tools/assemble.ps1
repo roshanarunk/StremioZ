@@ -1,10 +1,10 @@
 <#
 .SYNOPSIS
-  Builds stremio.exe and assembles a runnable portable StremioZ folder (dist\StremioZ).
+  Builds StremioZ.exe and assembles a runnable portable StremioZ folder (dist\StremioZ).
 
 .DESCRIPTION
   Layout (paths in mpv-animejanai.conf are relative to portable_config, "~~/.."):
-    stremio.exe, libmpv-2.dll (the-database fork), ajn-mvtools.dll
+    StremioZ.exe, libmpv-2.dll (the-database fork), ajn-mvtools.dll
     server.js, stremio-runtime.exe, ffmpeg DLLs        (Stremio streaming server)
     animejanai\                                        (libaji, ONNX models, animejanai.conf)
     aji-runtime.exe, AnimeJaNaiManager.exe (+ its DLLs)
@@ -42,8 +42,8 @@ if (-not $SkipBuild) {
                    "-DCMAKE_TOOLCHAIN_FILE=`"$toolchain`" -DVCPKG_TARGET_TRIPLET=x64-windows-static " +
                    "&& cmake --build `"$Build`"")
 }
-$exe = Join-Path $Build 'stremio.exe'
-if (-not (Test-Path $exe)) { throw "stremio.exe not built ($exe)" }
+$exe = Join-Path $Build 'StremioZ.exe'
+if (-not (Test-Path $exe)) { throw "StremioZ.exe not built ($exe)" }
 
 # ------------------------------------------------------------------ server.js
 $comp = Get-Content (Join-Path $PSScriptRoot 'components.json') -Raw | ConvertFrom-Json
@@ -67,6 +67,8 @@ function Copy-IfMissing($from, $to) {
 
 Write-Host "Assembling $Out"
 Copy-Item -Force $exe, (Join-Path $Build 'libmpv-2.dll'), (Join-Path $Build 'ajn-mvtools.dll') $Out
+# Before 0.9 the exe was stremio.exe (its profile folder moves over on first start).
+Remove-Item -Force -ErrorAction SilentlyContinue (Join-Path $Out 'stremio.exe')
 Copy-Item -Force $serverJs (Join-Path $Out 'server.js')
 Copy-Item -Force (Join-Path $Root 'utils\windows\stremio-runtime.exe') $Out
 Get-ChildItem (Join-Path $Root 'utils\windows\ffmpeg') -File | Copy-Item -Force -Destination $Out
@@ -127,11 +129,11 @@ Copy-IfMissing (Join-Path $overlay 'stremio-settings.ini') (Join-Path $cfg 'stre
 if ($SetupTensorRT) {
     $man = Get-Content (Join-Path $ajn 'manifest.json') -Raw | ConvertFrom-Json
     $inf = Join-Path $Out 'animejanai\inference'
-    & (Join-Path $Out 'aji-runtime.exe') ensure --app-id stremioz --per-copy --app-path (Join-Path $Out 'stremio.exe') `
+    & (Join-Path $Out 'aji-runtime.exe') ensure --app-id stremioz --per-copy --app-path (Join-Path $Out 'StremioZ.exe') `
         --app-version (Get-Content (Join-Path $ajn 'version.txt')).Trim() `
         --index $man.runtime.index_url --index-sha256 $man.runtime.index_sha256 `
         --want trt --gpus auto --aji-dir $inf --adopt-from $inf --progress lines
     if ($LASTEXITCODE -ne 0) { throw "aji-runtime ensure failed ($LASTEXITCODE)" }
 }
 
-Write-Host "Done: $Out\stremio.exe"
+Write-Host "Done: $Out\StremioZ.exe"

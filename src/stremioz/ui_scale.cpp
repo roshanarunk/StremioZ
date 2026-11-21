@@ -9,7 +9,7 @@
 
 namespace {
 
-// <0: auto, 0: off, >0: fixed zoom factor.
+// <0: auto, 0: off, >0: fixed zoom factor (fullscreen only, like auto).
 double ReadSetting()
 {
     wchar_t buf[32] = {};
@@ -24,15 +24,23 @@ double ReadSetting()
     return -1.0;
 }
 
+double g_setting = -2.0; // not read yet
+
 } // namespace
+
+void ReloadUiScaleSetting()
+{
+    g_setting = ReadSetting();
+}
 
 void ApplyUiScale(HWND hwnd)
 {
     if (!g_webviewController) return;
-    static const double setting = ReadSetting();
+    if (g_setting < -1.5) g_setting = ReadSetting();
+    const double setting = g_setting;
 
     double zoom = 1.0;
-    if (setting > 0) {
+    if (setting > 0 && g_isFullscreen) {
         zoom = setting;
     } else if (setting < 0 && g_isFullscreen) {
         RECT rc;

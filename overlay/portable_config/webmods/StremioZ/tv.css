@@ -192,3 +192,77 @@ body.szt-tv .szt-hints:not(:empty) {
 .szt-osk-key.szt-focus {
   background: #8c6cff;
 }
+
+/* Settings > StremioZ (settings.js) */
+.szs-section .szs-desc {
+  display: block;
+  margin-top: 0.25rem;
+  color: rgba(191, 191, 191, 0.5);
+  white-space: normal;
+  word-wrap: break-word;
+  line-height: 1.4;
+}
+.szs-setting.option-container-EGlcv {
+  flex-wrap: wrap;
+}
+.szs-setting .menu-container-B6cqK {
+  display: none;
+  position: absolute;
+  top: 100%;
+  right: 0;
+  z-index: 1000;
+  min-width: 100%;
+}
+.szs-setting .multiselect-container-w0c9l.active .menu-container-B6cqK {
+  display: block !important;
+}
+.szs-setting .menu-container-qiz0X .option-container-mO9yW.selected {
+  background-color: var(--accent, #7b5bf5);
+  font-weight: 700;
+}
+.szs-button {
+  justify-content: center;
+  cursor: pointer;
+  border-radius: 2.5rem;
+  background: rgba(255, 255, 255, 0.08);
+}
+.szs-button:hover,
+.szs-button.szt-focus {
+  background: rgba(140, 108, 255, 0.35);
+}
+.szs-button .label-FFamJ {
+  text-align: center;
+  width: 100%;
+}
+.szs-note {
+  width: 100%;
+  margin: 0.25rem 0 1.5rem;
+  color: rgba(255, 255, 255, 0.6);
+  font-size: 0.95rem;
+  line-height: 1.5;
+}
+.szs-version {
+  color: rgba(255, 255, 255, 0.85);
+  font-weight: 600;
+}
+.szs-links,
+.szs-credits {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.6rem 2rem;
+  margin: 0.25rem 0 1.5rem;
+  color: rgba(255, 255, 255, 0.6);
+  font-size: 1rem;
+}
+.szs-credits {
+  flex-direction: column;
+}
+.szs-link {
+  color: #b9a6ff;
+  text-decoration: none;
+  cursor: pointer;
+}
+.szs-link:hover,
+.szs-link.szt-focus {
+  text-decoration: underline;
+}

@@ -12,4 +12,6 @@
 //   auto (default)  fullscreen and a display under 1000 logical pixels tall
 //   off             never
 //   0.5 ... 1.0     this zoom factor, always
+// Settings > StremioZ changed [StremioZ] UiScale.
+void ReloadUiScaleSetting();
 void ApplyUiScale(HWND hwnd);

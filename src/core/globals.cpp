@@ -16,9 +16,9 @@ std::vector<std::wstring> g_webuiUrls = {
     L"https://web.stremio.com/"
 };
 std::vector<std::wstring> g_domainWhitelist;
-// StremioZ: empty until StremioZ has its own signed release feed (an update from
-// upstream Community would replace the StremioZ exe). --autoupdater-endpoint= still works.
-std::string  g_updateUrl= "";
+// StremioZ: StremioZ's own signed release feed (the latest GitHub release's
+// version.json). --autoupdater-endpoint= or [StremioZ] UpdateFeed replaces it.
+std::string  g_updateUrl= "https://github.com/" STREMIOZ_REPO "/releases/latest/download/version.json";
 std::wstring  g_extensionsDetailsUrl= L"https://raw.githubusercontent.com/Zaarrg/stremio-desktop-v5/refs/heads/webview-windows/extensions/extensions.json";
 std::wstring  g_webuiUrl;
 
@@ -26,6 +26,8 @@ std::wstring  g_webuiUrl;
 bool g_streamingServer      = true;
 bool g_autoupdaterForceFull = false;
 int g_devtoolsPort = 0; // StremioZ
+bool g_startTv = false;
+bool g_autoUpdate = true;
 
 // mpv
 mpv_handle* g_mpv = nullptr;
@@ -91,6 +93,7 @@ ULONG_PTR  g_gdiplusToken = 0;
 
 // Pending messages
 std::vector<nlohmann::json> g_outboundMessages;
+std::mutex g_outboundMutex;
 std::wstring g_launchProtocol;
 std::atomic<bool>  g_isAppReady   = false;
 std::atomic<bool>  g_waitStarted(false);
@@ -103,14 +106,18 @@ std::vector<std::wstring> g_scriptQueue;
 std::atomic_bool       g_updaterRunning = false;
 std::filesystem::path  g_installerPath;
 std::thread            g_updaterThread;
+// StremioZ release signing key (verifies version-details.json; the private
+// half signs releases in tools/release.ps1).
 const char* public_key_pem = R"(-----BEGIN PUBLIC KEY-----
-MIIBIjANBgkqhkiG9w0BAQEFAAOCAQ8AMIIBCgKCAQEAoXoJRQ81xOT3Gx6+hsWM
-ZiD4PwtLdxxNhEdL/iK0yp6AdO/L0kcSHk9YCPPx0XPK9sssjSV5vCbNE/2IJxnh
-/mV+3GAMmXgMvTL+DZgrHafnxe1K50M+8Z2z+uM5YC9XDLppgnC6OrUjwRqNHrKI
-T1vcgKf16e/TdKj8xlgadoHBECjv6dr87nbHW115bw8PVn2tSk/zC+QdUud+p6KV
-zA6+FT9ZpHJvdS3R0V0l7snr2cwapXF6J36aLGjJ7UviRFVWEEsQaKtAAtTTBzdD
-4B9FJ2IJb/ifdnVzeuNTDYApCSE1F89XFWN9FoDyw7Jkk+7u4rsKjpcnCDTd9ziG
-kwIDAQAB
+MIIBojANBgkqhkiG9w0BAQEFAAOCAY8AMIIBigKCAYEAtRDtxgEGErd7foDrqTZl
+FIV/f1ORj7foSIlg8DRYn9/tXcTlKkWm3UqeKUi1/Lk4E8IEqbO7Js7nuxxJS1RF
+6fKEFOCx8XYTwpX8g0uXwyJ4Jn+kl88x2/akV9ByU8Be3bKbv0TNlXxrtaQOQaoR
+orNtc0ju6IWAuVarv7gB/ciSFMNiu7prah7ANu5A65Kc4bA28jF/nfNnGc9mWWDG
+BbaUVwnwkxzIiecDo8/XEluuIhUdwGG7118TiLdMLPkjpSwmT0HPSGkZtuifD0UG
+PNZSArtdK394zgi7iZNHf+DD87AooPGnxOvgwWofdePCv+Cfzy4BLi94wudM0ljg
+fV+ck49G7Y8f5zjLGfHs2K3hwoco2NgSTsj6fYc/WL3cRBMkPQYn0FPJWCs+10He
+xZzJ8bFvgU8M1RDeeLLNwYgOi+FHgYtUVvhWfJfEcrecPLUZZ+p0uIpc/xKpC1Q1
+Nz0pBSu7c6DvBwz9nymEBGtm2ZaCvEB3Nu+VgzcksDUxAgMBAAE=
 -----END PUBLIC KEY-----)";
 
 // ThumbFast

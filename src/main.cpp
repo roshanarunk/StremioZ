@@ -65,6 +65,9 @@ int main(int argc, char *argv[]) {
     } else if (arg.rfind("--devtools-port=", 0) == 0) {
       // StremioZ: opt-in Chrome DevTools Protocol port on localhost (testing)
       g_devtoolsPort = std::atoi(arg.substr(16).c_str());
+    } else if (arg == "--tv") {
+      // StremioZ: TV mode at launch (the installer's "StremioZ TV" shortcut)
+      g_startTv = true;
     }
   }
 
@@ -76,13 +79,14 @@ int main(int argc, char *argv[]) {
   g_launchProtocol = launchProtocol;
 
   // check stremio-runtime duplicates
-  std::vector<std::wstring> processesToCheck = {L"stremio.exe",
-                                                L"stremio-runtime.exe"};
+  // StremioZ: Stremio's own app (stremio.exe) may run beside StremioZ; only a
+  // second streaming server (port 11470) would get in the way.
+  std::vector<std::wstring> processesToCheck = {L"stremio-runtime.exe"};
   if (IsDuplicateProcessRunning(processesToCheck)) {
     MessageBoxW(nullptr,
-                L"An older version of Stremio or Stremio server may be "
-                L"running. There could be issues.",
-                L"Stremio Already Running", MB_OK | MB_ICONWARNING);
+                L"Another Stremio streaming server is already running "
+                L"(Stremio or Stremio Service). Close it if streams don't start.",
+                L"StremioZ", MB_OK | MB_ICONWARNING);
   }
 
   // init GDI+
@@ -149,6 +153,8 @@ int main(int argc, char *argv[]) {
 
   // create splash
   CreateSplashScreen(g_hWnd);
+
+  if (g_startTv) ToggleFullScreen(g_hWnd, true); // StremioZ: --tv
 
   // init mpv
   if (!InitMPV(g_hWnd)) {

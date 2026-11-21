@@ -1,7 +1,35 @@
 #include <windows.h>
 #include "src/resource.h"
+#include "stremioz_version.h"
 
 #define IDR_MAINFRAME 101
 
-IDR_MAINFRAME ICON "images/stremio2.ico"
-IDR_SPLASH_PNG RCDATA "images/stremio.png"
+// StremioZ icon and splash (images/stremioz.*, drawn by tools/make-icon.py)
+IDR_MAINFRAME ICON "images/stremioz.ico"
+IDR_SPLASH_PNG RCDATA "images/stremioz.png"
+
+VS_VERSION_INFO VERSIONINFO
+FILEVERSION STREMIOZ_VERSION_RC
+PRODUCTVERSION STREMIOZ_VERSION_RC
+FILEOS VOS_NT_WINDOWS32
+FILETYPE VFT_APP
+BEGIN
+    BLOCK "StringFileInfo"
+    BEGIN
+        BLOCK "040904B0"
+        BEGIN
+            VALUE "CompanyName", "StremioZ"
+            VALUE "FileDescription", "StremioZ"
+            VALUE "FileVersion", STREMIOZ_VERSION
+            VALUE "InternalName", "StremioZ"
+            VALUE "LegalCopyright", "GPL-3.0. Based on Stremio Community v5 (Zaarrg) and Stremio Kai (allecsc)."
+            VALUE "OriginalFilename", "StremioZ.exe"
+            VALUE "ProductName", "StremioZ"
+            VALUE "ProductVersion", STREMIOZ_VERSION
+        END
+    END
+    BLOCK "VarFileInfo"
+    BEGIN
+        VALUE "Translation", 0x409, 1200
+    END
+END

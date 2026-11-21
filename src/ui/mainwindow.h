@@ -13,6 +13,7 @@ bool FocusExistingInstance(const std::wstring& protocolArg);
 
 // Our "ToggleFullScreen" logic
 void ToggleFullScreen(HWND hWnd, bool enable);
+void EnterTvMode(); // StremioZ
 
 // Webview
 void HandleInboundJSON(const std::string &msg);

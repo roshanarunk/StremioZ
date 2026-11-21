@@ -27,7 +27,7 @@ void CreateTrayIcon(HWND hWnd)
     HICON hIcon = LoadIcon(g_hInst, MAKEINTRESOURCE(IDR_MAINFRAME));
     g_nid.hIcon = hIcon;
 
-    _tcscpy_s(g_nid.szTip, _T("Stremio SingleInstance"));
+    _tcscpy_s(g_nid.szTip, _T("StremioZ"));
 
     Shell_NotifyIcon(NIM_ADD,&g_nid);
 }

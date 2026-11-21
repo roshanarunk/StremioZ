@@ -107,7 +107,7 @@ Pinned component versions live in one manifest. TensorRT is installed at first r
 | 3 | ✅ Stage A chain (DirectML → RTX HDR), HDR output checks | Verified 2026-11-20: the chain produces 2160p BT.2020/PQ at 24 fps with no drops (5070 Ti). The pipeline, settings and display-HDR detection are in place. Not yet seen on a real HDR display: Windows HDR was off on both monitors during testing. |
 | 4 | ✅ Stage B: TensorRT on D3D11 frames | Verified 2026-11-21: patched libaji `aji_trt` (D3D12-copy bridge, fence-synchronised). TensorRT Quality → RTX HDR at 60 fps 4K with no drops (49% GPU); output matches the CUDA path. |
 | 5 | ✅ Native gamepad + focus engine + TV mode + on-screen keyboard | Verified 2026-11-21 with simulated pad input and the shell's native message path: wizard, board, discover, search (typed on the on-screen keyboard), details, settings, menus and the player (seek, speed, quick menu, upscaler preset, control bar). Not yet tried with a physical pad on a TV. |
-| 6 | Settings UI for all of it (in Kai's settings pages), installer, updater, branding | one-click installer |
+| 6 | ✅ Settings UI for all of it (in Kai's settings pages), installer, updater, branding | Verified 2026-11-21: Settings → StremioZ (controller, TV, interface size, For You, updates); StremioZ.exe with its own icon and version; per-user NSIS installer (13 s, TensorRT step, TV-mode shortcut) and clean uninstall; signed update feed: download, silent install and relaunch, and a tampered feed refused. Not yet published to GitHub. |
 
 ### Notes from Phase 0–1
 - Layout as built: the repo root **is** the Community fork (remote `upstream` = Zaarrg/stremio-community-v5), with StremioZ additions in `src/stremioz/`, `overlay/` and `tools/`, rather than a `shell/` subfolder. That keeps upstream merges plain `git merge`.
@@ -122,6 +122,12 @@ Pinned component versions live in one manifest. TensorRT is installed at first r
 - On a 4K TV at 300 % scaling the web UI only gets a 1280×720 CSS viewport, too small for Kai's layout. In fullscreen the shell zooms the WebView so the UI lays out at about 1080p (`src/stremioz/ui_scale.cpp`).
 - The player's menus don't mark Escape as handled, so Stremio's global Escape → `history.back()` left the stream. The TV mod's capture listener closes the menu first.
 - Focus targets are found generically: focusable elements plus anything where a pointer cursor starts (Kai's toggles and option rows are plain divs). That covers Kai's UI without per-page code.
+
+### Notes from Phase 6
+- Releases: `tools/release.ps1` (docs/RELEASE.md). NSIS runs from `deps/nsis` (portable zip), so building needs no admin rights.
+- The update feed is the latest GitHub release's `version.json`, signed with a StremioZ key (the private half stays outside the repo, in `%USERPROFILE%\.stremioz`). Zaarrg's key and feed are gone, so a Community release can never replace StremioZ.
+- The exe became `StremioZ.exe` (it can run beside Stremio). Its profile folder is moved over from `stremio.exe.WebView2` on first start.
+- The installer isn't code-signed (SmartScreen asks once). Discord presence still uses Community's Discord application.
 
 ## 6. Constraints to respect
 

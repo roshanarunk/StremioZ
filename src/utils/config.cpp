@@ -90,6 +90,13 @@ void LoadSettings()
     g_initialVO = narrowVO;
     g_currentVolume = GetPrivateProfileIntW(L"MPV", L"InitialVolume", 50, iniPath.c_str());
 
+    // StremioZ (Settings > StremioZ writes these through SetStremioZSetting)
+    g_autoUpdate = (GetPrivateProfileIntW(L"StremioZ", L"AutoUpdate", 1, iniPath.c_str()) == 1);
+    wchar_t feed[1024] = {};
+    GetPrivateProfileStringW(L"StremioZ", L"UpdateFeed", L"", feed, _countof(feed), iniPath.c_str());
+    if (feed[0] && g_updateUrl.find("github.com/" STREMIOZ_REPO) != std::string::npos)
+        g_updateUrl = WStringToUtf8(feed); // a --autoupdater-endpoint= switch still wins
+
     // [Security] default-deny allow-lists
     // StremioZ: + script-message (Kai's mpv-bridge sends track-selector and
     // skip-intro settings with it).
@@ -103,6 +110,18 @@ void LoadSettings()
 
     LoadMergedAllowlist(iniPath, L"MpvCommandAllowlist", kDefCmds,  g_mpvCommandAllowlist);
     LoadMergedAllowlist(iniPath, L"MpvSetPropAllowlist", kDefProps, g_mpvSetPropAllowlist);
+}
+
+std::wstring GetStremioZSetting(const wchar_t* key, const wchar_t* def)
+{
+    wchar_t buf[256] = {};
+    GetPrivateProfileStringW(L"StremioZ", key, def, buf, _countof(buf), GetIniPath().c_str());
+    return buf;
+}
+
+void SetStremioZSetting(const wchar_t* key, const std::wstring& value)
+{
+    WritePrivateProfileStringW(L"StremioZ", key, value.c_str(), GetIniPath().c_str());
 }
 
 void SaveSettings()

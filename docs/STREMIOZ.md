@@ -14,7 +14,7 @@ Config layering in `dist\StremioZ\portable_config` (later wins):
 
 - Visual Studio 2022 or 2026 with **Desktop development with C++** and **C++ CMake tools**
 - git, 7-Zip, PowerShell 7, Node.js (builds the web UI; without it StremioZ falls back to the hosted one)
-- About 2.5 GB free for the CUDA 13.4 / TensorRT 11.4 SDKs that build the patched `aji_trt.dll` (`%USERPROFILE%ji-win`, or `AJI_WIN`)
+- About 2.5 GB free for the CUDA 13.4 / TensorRT 11.4 SDKs that build the patched `aji_trt.dll` (`%USERPROFILE%\aji-win`, or `AJI_WIN`)
 - vcpkg (default location `%USERPROFILE%\vcpkg`, or set `VCPKG_ROOT`) with:
 
 ```powershell
@@ -31,7 +31,7 @@ vcpkg install openssl:x64-windows-static nlohmann-json:x64-windows-static webvie
 .\tools\assemble.ps1 -SetupTensorRT
 ```
 
-The result is `dist\StremioZ\stremio.exe`, a portable folder.
+The result is `dist\StremioZ\StremioZ.exe`, a portable folder. For the installer and the update feed, see `docs/RELEASE.md` (`tools\release.ps1`).
 
 - `fetch-deps.ps1` downloads the pinned components in `tools/components.json`:
   - the-database libmpv fork, from which it generates an MSVC `mpv.lib`
@@ -41,7 +41,7 @@ The result is `dist\StremioZ\stremio.exe`, a portable folder.
   - the Stremio web UI, built by `tools/build-webui.ps1` from Zaarrg/stremio-web-shell-fixes at the pinned commit:
     - Dependencies are installed with pnpm's frozen lockfile and `--ignore-scripts`, so no package install scripts run.
     - Checked against what stremio.zarg.me serves: identical CSS, worker and stremio-core wasm. main.js has the same modules with different numeric ids.
-- `assemble.ps1` builds `stremio.exe` (CMake + Ninja + MSVC) and stages the folder in place:
+- `assemble.ps1` builds `StremioZ.exe` (CMake + Ninja + MSVC) and stages the folder in place:
   - It keeps TensorRT engines and user settings between runs. Pass `-Clean` to start over.
   - `-SkipBuild` restages without compiling.
 - `-SetupTensorRT` installs the TensorRT runtime and the builder pack for this GPU through `aji-runtime`, into the shared per-user store `%LOCALAPPDATA%\the-database\aji` (about 0.7 GB, one time).
@@ -151,16 +151,40 @@ Any controller SDL3 knows works (Xbox, PlayStation, Switch Pro, most generic pad
 The first controller press turns on TV mode:
 - the mouse cursor hides (moving the mouse brings it back);
 - a focus ring and button hints appear (glyphs follow the pad: Xbox, PlayStation or Nintendo);
-- the window goes fullscreen. To turn the fullscreen off, set `localStorage["stremioz-tv-fullscreen"] = "false"` (a settings toggle comes in Phase 6);
+- the window goes fullscreen (Settings → StremioZ → Fullscreen on controller);
 - in fullscreen on a TV with high Windows scaling, the interface is scaled to a 1080p layout (`UiScale`, above).
 
 The hints fade after 5 idle seconds and return on the next press.
+
+The **StremioZ TV mode** shortcut (`StremioZ.exe --tv`) starts in TV mode: fullscreen, with the controller focus ready. Run while StremioZ is open, it switches the open window to TV mode.
 
 Focus is remembered per page, so Back returns to the poster you left. When a show opens, Stremio scrolls its episode list to the episode you're on. The first focus waits for that scroll and lands on that episode (the one in progress, else the one in the middle), instead of going back to episode 1. A menu opened from any button (L3/R3, the player menu's Subtitles or Audio) gets focus on its first item.
 
 Stremio's web UI turns Escape into "back" unless a component handles it, and the player's subtitle, audio and speed menus and the episode drawer don't. Escape there used to leave the stream. StremioZ closes the menu instead, for B and for a keyboard's Esc alike.
 
 Keyboard users keep Kai's keyboard navigation.
+
+## Settings → StremioZ
+
+`overlay/portable_config/webmods/StremioZ/settings.js` adds a **StremioZ** section to Stremio's settings (and a button for it in the side menu):
+
+| Setting | Stored in |
+|---|---|
+| Controller (on/off) | `localStorage["stremioz-controller"]` |
+| Fullscreen on controller | `localStorage["stremioz-tv-fullscreen"]` |
+| Button hints | `localStorage["stremioz-tv-hints"]` |
+| TV interface size: Auto, Windows scaling, or 50–125 % | `[StremioZ] UiScale` in `portable_config/stremio-settings.ini` |
+| For You: Refresh now | clears the cached picks |
+| Check for updates (at startup), Check now, Install update | `[StremioZ] AutoUpdate` |
+
+The interface size applies in fullscreen only. Auto lays the interface out at about 1080 CSS pixels tall when the display's scaling would make it smaller (a 4K TV at 300 %). The section also shows the version and credits. The shell side is `stremioz-get-settings` / `stremioz-set-setting` / `stremioz-check-update` in `src/ui/mainwindow.cpp`. `[StremioZ] UpdateFeed` replaces the update feed (for testing).
+
+## Branding
+
+- The exe is `StremioZ.exe`, so it can run beside Stremio. Its profile (sign-in, library, settings) is `StremioZ.exe.WebView2` beside it. A folder from before the rename (`stremio.exe.WebView2`) is moved over on first start.
+- Icon and splash: `images/stremioz.ico` / `.png`, drawn by `tools/make-icon.py`. The installer art comes from `tools/make-installer-art.py`.
+- The version is `STREMIOZ_VERSION` in `CMakeLists.txt` (exe version resource, updater, installer). The web UI still sees the Community shell version (`APP_VERSION`) as `shellVersion`.
+- Kai's welcome wizard says "Welcome to StremioZ"; its links that support Kai's author are kept.
 
 ## Hero banner: For You
 
@@ -197,7 +221,6 @@ The upscaler for anime is chosen in **Settings → Player → Anime Upscaler** (
 
 - If a video starts while the window is minimized, the Vulkan output can't be created (0×0 surface) and that video plays without picture. `PauseOnMinimize=1`, the default, avoids most cases.
 - The local web UI has its own origin. Logins and Kai settings from a copy that loaded `stremio.zarg.me` don't carry over: sign in once.
-- Kai's welcome wizard still says "Stremio Kai" (branding is Phase 6).
 - Stremio's "Play URL/Magnet link" menu item reads the link from the clipboard, so it can't be used with only a controller.
 - A settings section with no buttons on screen (for example Kai Shortcuts) can only be scrolled with the right stick; select a section name on the left to jump to it.
 - RTX Video HDR output is tagged as 1000-nit HDR10. That's mpv's guess at NVIDIA's setting, and the real peak follows the RTX Video settings in the NVIDIA App.

@@ -121,7 +121,10 @@ bool StartNodeServer()
     // Let front-end know:
     nlohmann::json j;
     j["type"] ="ServerStarted";
-    g_outboundMessages.push_back(j);
+    {
+        std::lock_guard<std::mutex> lock(g_outboundMutex); // StremioZ
+        g_outboundMessages.push_back(j);
+    }
     PostMessage(g_hWnd, WM_NOTIFY_FLUSH, 0, 0);
 
     return true;

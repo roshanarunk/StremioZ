@@ -28,6 +28,7 @@
   const STORE = {
     fullscreen: "stremioz-tv-fullscreen", // default on
     hints: "stremioz-tv-hints", // default on
+    controller: "stremioz-controller", // default on (Settings > StremioZ)
   };
   const PAGES = ["#/", "#/discover", "#/library", "#/calendar", "#/addons", "#/settings"];
   const FOCUSABLE =
@@ -935,6 +936,7 @@
   }
 
   function onPad(msg) {
+    if (!lsGet(STORE.controller, true)) return;
     if (msg.pad) pad = msg.pad;
     if (msg.state === "up") {
       // End a held seek on the web player.
@@ -974,8 +976,14 @@
     window.chrome.webview.addEventListener("message", (e) => {
       const m = e.data;
       if (m && typeof m === "object" && m.type === "stremioz-gamepad") onPad(m);
+      else if (m && typeof m === "object" && m.type === "stremioz-tv-start") setTimeout(() => TV.start(), 600);
     });
   }
+  // The shell's --tv switch (the installer's "StremioZ (TV)" shortcut).
+  TV.start = () => {
+    tvOn();
+    if (!current(topOverlay())) focusFresh();
+  };
   TV.simulate = (button, state = "down") => onPad({ type: "stremioz-gamepad", button, state, pad }); // testing
   TV.debug = { candidates, current, topOverlay, pick }; // testing
   TV.initialized = true;

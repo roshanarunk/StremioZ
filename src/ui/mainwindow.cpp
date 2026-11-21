@@ -67,6 +67,14 @@ bool CheckSingleInstance(int argc, char* argv[], std::wstring &outProtocolArg)
 
     if(GetLastError()==ERROR_ALREADY_EXISTS){
         FocusExistingInstance(protocolArg);
+        // StremioZ: the TV shortcut while StremioZ is already open.
+        if(g_startTv) {
+            if(HWND existing = FindWindowW(APP_CLASS, nullptr)) {
+                COPYDATASTRUCT cds = {};
+                cds.dwData = 2;
+                SendMessage(existing, WM_COPYDATA, 0, (LPARAM)&cds);
+            }
+        }
         return false;
     }
     outProtocolArg = protocolArg;
@@ -133,6 +141,45 @@ void SendToJS(const std::string &eventName, const nlohmann::json &eventData)
 #endif
 }
 
+// StremioZ: TV mode (the --tv switch / TV shortcut): fullscreen, and the TV
+// webmod takes over with the controller focus.
+void EnterTvMode()
+{
+    ToggleFullScreen(g_hWnd, true);
+    if (g_webview && g_isAppReady)
+        g_webview->PostWebMessageAsJson(L"{\"type\":\"stremioz-tv-start\"}");
+}
+
+// StremioZ: values the Settings > StremioZ page shows.
+static void SendStremioZSettings()
+{
+    nlohmann::json j;
+    j["uiScale"] = WStringToUtf8(GetStremioZSetting(L"UiScale", L"auto"));
+    j["autoUpdate"] = g_autoUpdate;
+    j["version"] = STREMIOZ_VERSION;
+    j["updateStatus"] = UpdateStatusText();
+    j["updateReady"] = UpdateReady();
+    SendToJS("stremioz-settings", j);
+}
+
+static void SetStremioZSettingFromWeb(const std::string& key, const std::string& value)
+{
+    if (key == "UiScale") {
+        std::string v = value;
+        if (v != "auto" && v != "off") {
+            double f = 0;
+            try { f = std::stod(v); } catch (...) { return; }
+            if (f < 0.25 || f > 2.0) return;
+        }
+        SetStremioZSetting(L"UiScale", Utf8ToWstring(v));
+        ReloadUiScaleSetting();
+        ApplyUiScale(g_hWnd);
+    } else if (key == "AutoUpdate") {
+        g_autoUpdate = (value == "1");
+        SetStremioZSetting(L"AutoUpdate", g_autoUpdate ? L"1" : L"0");
+    }
+}
+
 void HandleEvent(const std::string &ev, std::vector<std::string> &args)
 {
     if(ev=="mpv-command"){
@@ -188,12 +235,20 @@ void HandleEvent(const std::string &ev, std::vector<std::string> &args)
         // page can't requestFullscreen(); use the shell's own fullscreen.
         bool on = args.empty() || args[0]!="false";
         ToggleFullScreen(g_hWnd, on);
+    } else if(ev=="stremioz-get-settings"){
+        SendStremioZSettings();
+    } else if(ev=="stremioz-set-setting"){
+        if(args.size() >= 2) SetStremioZSettingFromWeb(args[0], args[1]);
+        SendStremioZSettings();
+    } else if(ev=="stremioz-check-update"){
+        CheckForUpdatesAsync();
     } else if(ev=="mpv-observe-prop"){
         HandleMpvObserveProp(args);
     } else if(ev=="app-ready"){
         g_isAppReady=true;
         HideSplash();
         PostMessage(g_hWnd, WM_NOTIFY_FLUSH, 0, 0);
+        if(g_startTv) EnterTvMode(); // StremioZ: --tv
     } else if(ev=="update-requested"){
         RunInstallerAndExit();
     } else if(ev == "seek-hover") {
@@ -402,10 +457,14 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT message, WPARAM wParam, LPARAM lParam)
         return DefWindowProc(hWnd, message, wParam, lParam);
     case WM_NOTIFY_FLUSH: {
         if (g_isAppReady) {
-            for(const auto& pendingMsg : g_outboundMessages) {
+            std::vector<nlohmann::json> pending;
+            {
+                std::lock_guard<std::mutex> lock(g_outboundMutex);
+                pending.swap(g_outboundMessages);
+            }
+            for(const auto& pendingMsg : pending) {
                 SendToJS(pendingMsg["type"], pendingMsg);
             }
-            g_outboundMessages.clear();
 
             if(!g_launchProtocol.empty()) {
                 COPYDATASTRUCT cds;
@@ -515,6 +574,10 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT message, WPARAM wParam, LPARAM lParam)
     case WM_COPYDATA:
     {
         PCOPYDATASTRUCT pcds = (PCOPYDATASTRUCT)lParam;
+        if (pcds && pcds->dwData == 2) {
+            EnterTvMode(); // StremioZ: TV shortcut, second launch
+            return TRUE;
+        }
         if (pcds && pcds->dwData == 1 && pcds->lpData) {
             // Assuming data is a wide string containing the URL or file path
             std::wstring receivedUrl((wchar_t*)pcds->lpData, pcds->cbData / sizeof(wchar_t));

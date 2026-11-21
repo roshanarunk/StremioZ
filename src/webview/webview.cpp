@@ -239,8 +239,22 @@ void InitWebView2(HWND hWnd)
         std::wcout << L"[WEBVIEW]: Using local WebView2: " << browserDir << std::endl;
     }
 
+    // StremioZ: the profile (sign-in, library, settings) lives in
+    // StremioZ.exe.WebView2 beside the exe. Builds before the exe was renamed
+    // kept it in stremio.exe.WebView2: move it over once.
+    static std::wstring userDataDir = exeDir + L"\\StremioZ.exe.WebView2";
+    {
+        const std::wstring legacy = exeDir + L"\\stremio.exe.WebView2";
+        if (!DirectoryExists(userDataDir) && DirectoryExists(legacy)) {
+            if (MoveFileW(legacy.c_str(), userDataDir.c_str()))
+                std::wcout << L"[WEBVIEW]: Moved the profile to " << userDataDir << std::endl;
+            else
+                std::wcout << L"[WEBVIEW]: Couldn't move the old profile (error " << GetLastError() << L")" << std::endl;
+        }
+    }
+
     HRESULT hr = CreateCoreWebView2EnvironmentWithOptions(
-        browserExecutableFolder, nullptr, options.Get(),
+        browserExecutableFolder, userDataDir.c_str(), options.Get(),
         Microsoft::WRL::Callback<ICoreWebView2CreateCoreWebView2EnvironmentCompletedHandler>(
         [hWnd](HRESULT res, ICoreWebView2Environment* env)->HRESULT
         {
