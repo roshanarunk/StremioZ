@@ -43,7 +43,7 @@ bool FocusExistingInstance(const std::wstring &protocolArg)
 
 bool CheckSingleInstance(int argc, char* argv[], std::wstring &outProtocolArg)
 {
-    g_hMutex = CreateMutexW(nullptr, FALSE, L"SingleInstanceMtx_StremioWebShell");
+    g_hMutex = CreateMutexW(nullptr, FALSE, L"SingleInstanceMtx_StremioZ");
     if(!g_hMutex){
         std::wcerr << L"CreateMutex failed => fallback to multi.\n";
         AppendToCrashLog("CreateMutex failed => fallback to multi.");

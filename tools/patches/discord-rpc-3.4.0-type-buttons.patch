@@ -1,0 +1,65 @@
+diff --git a/include/discord_rpc.h b/include/discord_rpc.h
+index 3e1441e..41926c5 100644
+--- a/include/discord_rpc.h
++++ b/include/discord_rpc.h
+@@ -39,8 +39,19 @@ typedef struct DiscordRichPresence {
+     const char* joinSecret;     /* max 128 bytes */
+     const char* spectateSecret; /* max 128 bytes */
+     int8_t instance;
++    /* StremioZ additions (Stremio Community's discord.cpp uses these) */
++    int type;                   /* DISCORD_ACTIVITY_TYPE_* */
++    const char* button1Label;   /* max 32 bytes */
++    const char* button1Url;     /* max 512 bytes */
++    const char* button2Label;
++    const char* button2Url;
+ } DiscordRichPresence;
+ 
++#define DISCORD_ACTIVITY_TYPE_PLAYING 0
++#define DISCORD_ACTIVITY_TYPE_LISTENING 2
++#define DISCORD_ACTIVITY_TYPE_WATCHING 3
++#define DISCORD_ACTIVITY_TYPE_COMPETING 5
++
+ typedef struct DiscordUser {
+     const char* userId;
+     const char* username;
+diff --git a/src/serialization.cpp b/src/serialization.cpp
+index 6cc1e90..6d24e50 100644
+--- a/src/serialization.cpp
++++ b/src/serialization.cpp
+@@ -108,6 +108,11 @@ size_t JsonWriteRichPresenceObj(char* dest,
+                 WriteOptionalString(writer, "state", presence->state);
+                 WriteOptionalString(writer, "details", presence->details);
+ 
++                if (presence->type) {
++                    WriteKey(writer, "type");
++                    writer.Int(presence->type);
++                }
++
+                 if (presence->startTimestamp || presence->endTimestamp) {
+                     WriteObject timestamps(writer, "timestamps");
+ 
+@@ -153,6 +158,24 @@ size_t JsonWriteRichPresenceObj(char* dest,
+                     WriteOptionalString(writer, "spectate", presence->spectateSecret);
+                 }
+ 
++                bool b1 = presence->button1Label && presence->button1Label[0] &&
++                  presence->button1Url && presence->button1Url[0];
++                bool b2 = presence->button2Label && presence->button2Label[0] &&
++                  presence->button2Url && presence->button2Url[0];
++                if (b1 || b2) {
++                    WriteArray buttons(writer, "buttons");
++                    if (b1) {
++                        WriteObject button(writer);
++                        WriteOptionalString(writer, "label", presence->button1Label);
++                        WriteOptionalString(writer, "url", presence->button1Url);
++                    }
++                    if (b2) {
++                        WriteObject button(writer);
++                        WriteOptionalString(writer, "label", presence->button2Label);
++                        WriteOptionalString(writer, "url", presence->button2Url);
++                    }
++                }
++
+                 writer.Key("instance");
+                 writer.Bool(presence->instance != 0);
+             }

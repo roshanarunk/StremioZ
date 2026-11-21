@@ -119,6 +119,10 @@ static bool VerifySignature(const std::string& data, const std::string& signatur
 void RunAutoUpdaterOnce()
 {
     g_updaterRunning = true;
+    if(g_updateUrl.empty()) {
+        std::cout<<"Auto-update disabled (no update feed).\n";
+        return;
+    }
     std::cout<<"Checking for Updates.\n";
 
     std::string versionContent;

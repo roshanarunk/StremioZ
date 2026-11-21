@@ -1,4 +1,5 @@
 #include "player.h"
+#include "../stremioz/animejanai_env.h"
 #include <iostream>
 #include <cctype>
 #include "../core/globals.h"
@@ -221,6 +222,7 @@ void pauseMPV(bool allowed)
 
 bool InitMPV(HWND hwnd)
 {
+    PrepareAnimeJaNaiEnvironment(); // StremioZ
     g_mpv = mpv_create();
     if(!g_mpv){
         std::cerr<<"mpv_create failed\n";

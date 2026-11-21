@@ -1,0 +1,10 @@
+_ref/
+cmake-build-*/
+build-*/
+dist/
+deps/discord-rpc/
+deps/thedatabase-mpv/
+.cache/
+*.user
+deps/.download/
+deps/animejanai-runtime/

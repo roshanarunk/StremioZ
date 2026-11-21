@@ -1,0 +1,30 @@
+{
+  "_comment": "Pinned third-party components for StremioZ. Bump these together with the AnimeJaNai release they came from (see the-database/mpv-AnimeJaNai BuildMpvUpscale2xAnimeJaNai/Program.cs).",
+  "libmpv": {
+    "repo": "the-database/mpv-winbuild",
+    "tag": "2026-11-15-41868e1757-addons-43698509897",
+    "asset": "mpv-dev-x86_64-20261115-git-41868e1757.7z",
+    "sha256": "790ec5b0371f7d720c868abd8fe45331cef753991ca6ef1dc02d0efd3764332b",
+    "files": [
+      "libmpv-2.dll",
+      "ajn-mvtools.dll"
+    ]
+  },
+  "animejanai": {
+    "repo": "the-database/mpv-AnimeJaNai",
+    "tag": "3.12.5",
+    "fullPackage": "mpv-upscale-2x_animejanai-full-package-3.12.5.7z.001",
+    "sha256": "67982b51821aabdc0cd50ffce37f0b4a4b66f629459c49807b4a414e1d63bd98"
+  },
+  "discordRpc": {
+    "repo": "discord/discord-rpc",
+    "tag": "v3.4.0",
+    "_note": "built from source with tools/patches/discord-rpc-3.4.0-type-buttons.patch"
+  },
+  "streamingServer": {
+    "_note": "Stremio's own server.js. Re-uploaded by Stremio on 2025-12-22, so the checksum in version/version-details.json (Community's) no longer matches.",
+    "version": "v4.20.15",
+    "url": "https://dl.strem.io/server/v4.20.15/desktop/server.js",
+    "sha256": "678332fecb0f2b22a7b65e3013afee065b43f8cf62c81bd3693b4d7ae664628d"
+  }
+}

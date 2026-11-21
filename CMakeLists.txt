@@ -10,9 +10,12 @@ option(DEBUG_LOG "Allow debug logs" ON)
 # Locate MPV
 if(CMAKE_SIZEOF_VOID_P EQUAL 8)
     # 64-bit architecture
-    set(MPV_INCLUDE_DIR "${CMAKE_CURRENT_SOURCE_DIR}/deps/libmpv/x86_64/include")
-    set(MPV_LIBRARY "${CMAKE_CURRENT_SOURCE_DIR}/deps/libmpv/x86_64/mpv.lib")
-    set(MPV_DLL "${CMAKE_CURRENT_SOURCE_DIR}/deps/libmpv/x86_64/libmpv-2.dll")
+    # StremioZ: the-database libmpv fork (carries vf_animejanai). Fetched by tools/fetch-deps.ps1.
+    set(MPV_DIR "${CMAKE_CURRENT_SOURCE_DIR}/deps/thedatabase-mpv/x86_64")
+    set(MPV_INCLUDE_DIR "${MPV_DIR}/include")
+    set(MPV_LIBRARY "${MPV_DIR}/mpv.lib")
+    set(MPV_DLL "${MPV_DIR}/libmpv-2.dll")
+    set(MPV_EXTRA_DLLS "${MPV_DIR}/ajn-mvtools.dll")
 
     set(DISCORD_LIB "${CMAKE_CURRENT_SOURCE_DIR}/deps/discord-rpc/win64-static/lib/discord-rpc.lib")
     set(DISCORD_INCLUDE_DIR "${CMAKE_CURRENT_SOURCE_DIR}/deps/discord-rpc/win64-static/include")
@@ -64,6 +67,8 @@ set(SOURCES
         src/utils/extensions.h
         src/utils/discord.cpp
         src/utils/discord.h
+        src/stremioz/animejanai_env.h
+        src/stremioz/animejanai_env.cpp
 )
 
 add_executable(${PROJECT_NAME} WIN32 ${SOURCES})
@@ -90,6 +95,6 @@ target_compile_definitions(${PROJECT_NAME} PRIVATE DEBUG_LOG)
 # Copy MPV DLL
 add_custom_command(TARGET ${PROJECT_NAME} POST_BUILD
         COMMAND ${CMAKE_COMMAND} -E copy_if_different
-        "${MPV_DLL}"
+        "${MPV_DLL}" ${MPV_EXTRA_DLLS}
         $<TARGET_FILE_DIR:${PROJECT_NAME}>
 )
