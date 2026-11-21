@@ -1,10 +1,14 @@
 --[[
   @name Profile Manager
   @description Hybrid profile system: static base profiles + dynamic layers
-  @version 8.2-stremioz
+  @version 8.3-stremioz
   @author allecsc (StremioZ changes marked "StremioZ")
 
   @changelog
+    v8.3-stremioz - "stremioz-set-upscaler <key>" script message: switches the
+           upscaler for the current video and re-applies the chain, on any
+           video (a manual choice also upscales non-anime). Used by the preset
+           keys (input.conf) and the controller's player menu.
     v8.2-stremioz - TensorRT on D3D11 frames (StremioZ's patched aji_trt): the
            RTX pipeline keeps the user's AnimeJaNai conf (no DirectML copy);
            "auto" picks it whenever an NVIDIA GPU is present.
@@ -806,7 +810,13 @@ function try_execute_profile()
 
     -- StremioZ: one upscaler setting. Older payloads only carry Kai's
     -- shader_preset; map it so a Kai-era profile keeps working.
-    local upscaler_key = meta.upscaler
+    local upscaler_key = state.override_upscaler or meta.upscaler
+    if state.override_upscaler and state.override_upscaler ~= "off" and not is_anime then
+        -- StremioZ: an upscaler chosen by hand (keys / controller quick menu)
+        -- applies even when the file wasn't detected as anime.
+        is_anime = true
+        detection_reason = "Chosen by hand"
+    end
     if not upscaler_key and meta.shader_preset then
         upscaler_key = (meta.shader_preset == "none") and "off" or ("a4k-" .. meta.shader_preset)
     end
@@ -912,6 +922,24 @@ function try_execute_profile()
 end
 
 
+-- StremioZ: change the upscaler for the current video (input.conf keys and the
+-- controller quick menu). Re-runs the chain instead of `apply-profile
+-- upscale-on`, which would replace the whole vf (dropping RTX Video HDR and
+-- the RTX pipeline's output-444=no).
+mp.register_script_message("stremioz-set-upscaler", function(key)
+    if not UPSCALERS[key] then
+        log("Unknown upscaler: " .. tostring(key))
+        return
+    end
+    state.override_upscaler = key
+    mp.osd_message(key == "off" and "Upscaler: off" or ("Upscaler: " .. (UPSCALERS[key].label or key)), 2)
+    if state.video_params_ready then
+        state.profile_applied = false
+        state.metadata_timed_out = true   -- don't wait for metadata again
+        try_execute_profile()
+    end
+end)
+
 -- Observer for video-params (Phase 1 of Latch)
 mp.observe_property('video-params', 'native', function(_, params)
     -- STRICT VALIDATION: Ignore partial updates.
@@ -939,6 +967,7 @@ mp.register_event('start-file', function()
     state.video_params_ready = false
     state.params_cache = nil
     state.metadata_timed_out = false
+    state.override_upscaler = nil
     if state.metadata_timer then state.metadata_timer:kill(); state.metadata_timer = nil end
     -- StremioZ: fix the video pipeline for this session before the first
     -- video output opens (uses the setting from fresh metadata, else the

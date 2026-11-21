@@ -28,7 +28,10 @@
       this.enhanceBackButton();
       this.enhanceKeyboardNavigation();
       this.enhanceFocusState();
-      this.initGamepad();
+      // StremioZ: controllers come from the shell (SDL3, native) and are
+      // handled by webmods/StremioZ/tv-navigation.js; the browser Gamepad API
+      // poller would act on the same presses a second time.
+      // this.initGamepad();
       this.initSkipButtonClick();
 
       // Programmatically seize Electron Window Focus after rendering.

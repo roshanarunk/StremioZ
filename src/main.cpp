@@ -12,6 +12,7 @@
 #include "core/globals.h"
 #include "stremioz/webui.h"
 #include "stremioz/display_hdr.h"
+#include "stremioz/gamepad.h"
 #include "mpv/player.h"
 #include "node/server.h"
 #include "tray/tray.h"
@@ -155,6 +156,7 @@ int main(int argc, char *argv[]) {
     return 1;
   }
   PublishDisplayHdr(g_hWnd); // StremioZ
+  StartGamepad(g_hWnd);      // StremioZ: native controller input
 
   // node
   if (g_streamingServer) {

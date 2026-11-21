@@ -106,15 +106,22 @@ Pinned component versions live in one manifest. TensorRT is installed at first r
 | 2 | ✅ Merge Kai overlay (UI, scripts); resolve mpv.conf; one vf-chain owner; drop SVP | Kai UI + automation working on top of AnimeJaNai. Verified 2026-11-20 (local files + simulated Stremio metadata; real streams need a signed-in account). RIFE interpolation deferred: needs the 460 MB RIFE component |
 | 3 | ✅ Stage A chain (DirectML → RTX HDR), HDR output checks | Verified 2026-11-20: the chain produces 2160p BT.2020/PQ at 24 fps with no drops (5070 Ti). The pipeline, settings and display-HDR detection are in place. Not yet seen on a real HDR display: Windows HDR was off on both monitors during testing. |
 | 4 | ✅ Stage B: TensorRT on D3D11 frames | Verified 2026-11-21: patched libaji `aji_trt` (D3D12-copy bridge, fence-synchronised). TensorRT Quality → RTX HDR at 60 fps 4K with no drops (49% GPU); output matches the CUDA path. |
-| 5 | Native gamepad + focus engine + TV mode + on-screen keyboard | whole app usable with only a pad, no mouse/keyboard |
+| 5 | ✅ Native gamepad + focus engine + TV mode + on-screen keyboard | Verified 2026-11-21 with simulated pad input and the shell's native message path: wizard, board, discover, search (typed on the on-screen keyboard), details, settings, menus and the player (seek, speed, quick menu, upscaler preset, control bar). Not yet tried with a physical pad on a TV. |
 | 6 | Settings UI for all of it (in Kai's settings pages), installer, updater, branding | one-click installer |
 
 ### Notes from Phase 0–1
 - Layout as built: the repo root **is** the Community fork (remote `upstream` = Zaarrg/stremio-community-v5), with StremioZ additions in `src/stremioz/`, `overlay/` and `tools/`, rather than a `shell/` subfolder. That keeps upstream merges plain `git merge`.
 - AnimeJaNai's SPAN models run on libaji's **native CUDA kernels** on sm_80+, so no TensorRT engine build happens for the default profiles. TensorRT is still installed, for custom models and RIFE.
 - Stremio's web UI forwards keys to mpv as `CTRL+J` / `SHIFT+2`. Bindings must use that spelling (mpv letter keys are case-sensitive).
-- The window opens small on first run. TV mode (Phase 5) should start fullscreen.
+- The window opens small on first run. TV mode (Phase 5) goes fullscreen on the first controller press.
 - Stremio's web UI: Zaarrg's build is now built from source at a pinned commit (`tools/build-webui.ps1`) and served locally from `webui\`. `stremio.zarg.me` stays as a fallback.
+
+### Notes from Phase 5
+- Routing changed from the design above: every button goes to the web UI, including during playback. The webmod drives the web player through its own keys (so its UI stays in step) and mpv through the existing transport; nothing is handled behind the UI's back.
+- SDL3 (vcpkg, static) runs on its own thread. Input is forwarded only while StremioZ is the foreground window, so a game in another window keeps its pad.
+- On a 4K TV at 300 % scaling the web UI only gets a 1280×720 CSS viewport, too small for Kai's layout. In fullscreen the shell zooms the WebView so the UI lays out at about 1080p (`src/stremioz/ui_scale.cpp`).
+- The player's menus don't mark Escape as handled, so Stremio's global Escape → `history.back()` left the stream. The TV mod's capture listener closes the menu first.
+- Focus targets are found generically: focusable elements plus anything where a pointer cursor starts (Kai's toggles and option rows are plain divs). That covers Kai's UI without per-page code.
 
 ## 6. Constraints to respect
 

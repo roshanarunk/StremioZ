@@ -61,6 +61,8 @@ The result is `dist\StremioZ\stremio.exe`, a portable folder.
 | `--devtools-port=N` | opt-in Chrome DevTools Protocol port on localhost, for testing the web UI (for example with a CDP script) |
 | `overlay/portable_config` | `mpv.conf`: AnimeJaNai defaults, then Kai's tuning, then Stremio overrides (no watch-later, no forced `alang`/`slang`). Keeps `gpu-api=vulkan` (CUDA interop).<br>`input.conf`: Kai's keys plus AnimeJaNai's, without SVP and without `q quit` |
 | server.js | Pinned to Stremio's current upload of v4.20.15. Community's recorded checksum is from an older upload. |
+| `src/stremioz/gamepad.cpp` | Native controller input (SDL3): Xbox, PlayStation, Switch Pro and generic pads, hot-plug. Presses, auto-repeats and releases go to the web UI as `stremioz-gamepad` messages while StremioZ is the foreground window. `stremioz-fullscreen` lets the web UI switch fullscreen. |
+| `src/stremioz/ui_scale.cpp` | TV interface scale: in fullscreen on a display under 1000 logical pixels tall (a 4K TV at 300 % is 1280×720), the WebView2 zoom is set so the UI lays out at about 1080 CSS pixels, the size Kai is designed for. `[StremioZ] UiScale` in `stremio-settings.ini`: `auto` (default), `off`, or a fixed factor such as `0.75`. |
 
 ## NVIDIA RTX Video (Phases 3 and 4)
 
@@ -117,14 +119,69 @@ Measured on an RTX 5070 Ti, upscaling 1080p to 2160p:
 | Phase 3's DirectML Balanced + RTX HDR | no drops, GPU 34 %, 148 W | Quality: about half the frames dropped |
 | RTX VSR + RTX HDR (live action) | no drops (runs on the video engine) | |
 
+**Faster playback.** AnimeJaNai's presets check the video's own frame rate (Quality and Balanced up to 31 fps for 720p to 1080p, Quality up to 61 fps), not the playback speed. So at 2× a 24 fps episode still gets the chosen model, which then has to keep up with 48 frames a second. For 720p to 1080p up to 31 fps, Quality and Balanced run the same model (V3.1 Balanced); Performance runs the smaller V3.1 Performance.
+
+Measured on an RTX 5070 Ti with RTX HDR, on a test pattern that changes every frame. Real anime holds drawings, and AnimeJaNai reuses those frames, so its load is lower.
+
+| Preset | 2× (48 frames/s) | 3× (72 frames/s) |
+|---|---|---|
+| Balanced / Quality | no drops, GPU 39 %, 164 W | drops |
+| Performance | no drops, GPU 23 %, 96 W | drops |
+
+At 3× the drops come from the 60 Hz display, not from upscaling: the GPU was only a third busy. A 120 Hz or faster output would show every frame.
+
+## Controller and TV mode
+
+Any controller SDL3 knows works (Xbox, PlayStation, Switch Pro, most generic pads), plugged in before or after start. `overlay/portable_config/webmods/StremioZ/tv-navigation.js` decides what each button does on the current screen:
+
+| Button | Browsing | Player |
+|---|---|---|
+| D-pad / left stick | Move (hold to repeat) | ◀ ▶ seek 10 s (hold: keeps seeking), ▲ control bar, ▼ hide it |
+| A | Select; on a text field, on-screen keyboard; on a dropdown, a list | Play / pause |
+| B | Close menu or dialog, else back | Close menu, else leave the player |
+| X | Search (opens the keyboard) | Skip intro |
+| Y | Home | Player menu: subtitles, audio, speed, AnimeJaNai preset, next episode, episode list |
+| LB / RB | Previous / next page (Board, Discover, Library, Calendar, Addons, Settings) | Speed −/+ 0.25 |
+| LT / RT | Jump three items up / down | Seek −/+ 85 s |
+| Right stick | Scroll | ▲ ▼ volume |
+| Start | Done (keyboard) | Next episode |
+| View | Show / hide the button hints | Episode list |
+| L3 / R3 | | Subtitle / audio menu |
+
+The first controller press turns on TV mode:
+- the mouse cursor hides (moving the mouse brings it back);
+- a focus ring and button hints appear (glyphs follow the pad: Xbox, PlayStation or Nintendo);
+- the window goes fullscreen. To turn the fullscreen off, set `localStorage["stremioz-tv-fullscreen"] = "false"` (a settings toggle comes in Phase 6);
+- in fullscreen on a TV with high Windows scaling, the interface is scaled to a 1080p layout (`UiScale`, above).
+
+The hints fade after 5 idle seconds and return on the next press.
+
+Focus is remembered per page, so Back returns to the poster you left. A menu opened from any button (L3/R3, the player menu's Subtitles or Audio) gets focus on its first item.
+
+Stremio's web UI turns Escape into "back" unless a component handles it, and the player's subtitle, audio and speed menus and the episode drawer don't. Escape there used to leave the stream. StremioZ closes the menu instead, for B and for a keyboard's Esc alike.
+
+Keyboard users keep Kai's keyboard navigation.
+
+## Hero banner: For You
+
+The hero banner on the home screen defaults to **For You** (Settings → Hero Banner source, for movies and for series), built from your own watch history by `overlay/portable_config/webmods/StremioZ/hero-for-you.js`. It needs no API keys:
+
+1. **Seeds.** The 20 titles from your library and history (`library`, `library_recent`) that matter most. Recent and much-watched titles weigh more, and debrid, YouTube and other add-on entries are skipped.
+2. **Anime seeds** are matched to AniList through arm.haglund.dev, the same service Kai uses. One AniList query fetches the community recommendations for all of them, and each candidate scores by votes times the weight of the seeds recommending it. Results map back to IMDb IDs (the hero's artwork needs them). Shows you've already watched, and other seasons of them, are dropped.
+3. **Other series and movies** contribute their genres, and Cinemeta's popular titles in your top three genres fill in, in proportion to how much of your watching isn't anime.
+
+The list is cached for 12 hours, or until the set of your top titles changes. The ID mappings are kept for 30 days, so after the first build (about 35 s, in the background) a rebuild takes a fraction of a second. The other sources (trending lists, Cinemeta, Custom) are still in the dropdown, and Kai's anime airing-schedule mode is unchanged.
+
 ## Keys in the player
 
 | Key | Action |
 |---|---|
 | Ctrl+J | AnimeJaNai stats |
 | Ctrl+E | AnimeJaNai Manager (profiles, backend) |
-| Shift+1 / 2 / 3 | AnimeJaNai Quality / Balanced / Performance (this video) |
-| Ctrl+0 | AnimeJaNai off (this video) |
+| Shift+1 / 2 / 3 | AnimeJaNai Quality / Balanced / Performance (this video, anime or not) |
+| Ctrl+0 | Upscaling off (this video) |
+| Ctrl+Shift+← / → | Seek −/+ 85 s (skip an opening) |
+| Ctrl+Shift+↑ / ↓, Ctrl+Shift+Home | Speed +/− 0.25, back to 1× |
 | Ctrl+Shift+1 … 9 | AnimeJaNai custom slots |
 | F1 / F2 / F3, F4 | Anime4K presets (Kai), clear |
 | Ctrl+1 … 4 | Anime4K thin-line shaders (Kai) |
@@ -140,4 +197,6 @@ The upscaler for anime is chosen in **Settings → Player → Anime Upscaler** (
 - If a video starts while the window is minimized, the Vulkan output can't be created (0×0 surface) and that video plays without picture. `PauseOnMinimize=1`, the default, avoids most cases.
 - The local web UI has its own origin. Logins and Kai settings from a copy that loaded `stremio.zarg.me` don't carry over: sign in once.
 - Kai's welcome wizard still says "Stremio Kai" (branding is Phase 6).
+- Stremio's "Play URL/Magnet link" menu item reads the link from the clipboard, so it can't be used with only a controller.
+- A settings section with no buttons on screen (for example Kai Shortcuts) can only be scrolled with the right stick; select a section name on the left to jump to it.
 - RTX Video HDR output is tagged as 1000-nit HDR10. That's mpv's guess at NVIDIA's setting, and the real peak follows the RTX Video settings in the NVIDIA App.

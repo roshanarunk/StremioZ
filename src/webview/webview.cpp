@@ -12,6 +12,7 @@
 #include "../ui/mainwindow.h"
 #include "../utils/extensions.h"
 #include "../stremioz/webui.h"
+#include "../stremioz/ui_scale.h"
 
 static const wchar_t* EXEC_SHELL_SCRIPT = LR"JS_CODE(
 try {
@@ -298,6 +299,7 @@ void InitWebView2(HWND hWnd)
 
                     RECT rc; GetClientRect(hWnd,&rc);
                     g_webviewController->put_Bounds(rc);
+                    ApplyUiScale(hWnd); // StremioZ
 
                     g_webview->AddScriptToExecuteOnDocumentCreated(EXEC_SHELL_SCRIPT,nullptr);
                     g_webview->AddScriptToExecuteOnDocumentCreated(INJECTED_KEYDOWN_SCRIPT,nullptr);

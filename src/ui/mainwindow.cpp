@@ -11,6 +11,8 @@
 #include "../utils/helpers.h"
 #include "../utils/config.h"
 #include "../stremioz/display_hdr.h"
+#include "../stremioz/ui_scale.h"
+#include "../stremioz/gamepad.h"
 #include "../mpv/player.h"
 #include "../tray/tray.h"
 #include "../ui/splash.h"
@@ -181,6 +183,11 @@ void HandleEvent(const std::string &ev, std::vector<std::string> &args)
             return;
         }
         HandleMpvSetProp(args);
+    } else if(ev=="stremioz-fullscreen"){
+        // StremioZ: TV mode. Controller presses are not user gestures, so the
+        // page can't requestFullscreen(); use the shell's own fullscreen.
+        bool on = args.empty() || args[0]!="false";
+        ToggleFullScreen(g_hWnd, on);
     } else if(ev=="mpv-observe-prop"){
         HandleMpvObserveProp(args);
     } else if(ev=="app-ready"){
@@ -610,6 +617,7 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT message, WPARAM wParam, LPARAM lParam)
         if(g_webviewController){
             RECT rc; GetClientRect(hWnd,&rc);
             g_webviewController->put_Bounds(rc);
+            ApplyUiScale(hWnd); // StremioZ: TV interface scale (fullscreen changes land here)
         }
         if(g_hSplash){
             int w = LOWORD(lParam);
@@ -621,8 +629,12 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT message, WPARAM wParam, LPARAM lParam)
     case WM_MPV_WAKEUP:
         HandleMpvEvents();
         break;
+    case WM_STREMIOZ_GAMEPAD: // StremioZ: controller input -> web UI
+        HandleGamepadMessage(wParam, lParam);
+        break;
     case WM_DESTROY:
     {
+        StopGamepad(); // StremioZ
         // release mutex
         if(g_hMutex) { CloseHandle(g_hMutex); g_hMutex=nullptr; }
         PostQuitMessage(0);

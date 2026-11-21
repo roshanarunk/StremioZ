@@ -175,64 +175,45 @@
     },
 
     // ─── GAMEPAD NAVIGATION ────────────────────────────────────────
-    { type: "header", name: "Gamepad — Navigation", icon: "gamepad" },
+    // StremioZ: native controller input (webmods/StremioZ/tv-navigation.js).
+    { type: "header", name: "Controller — Navigation", icon: "gamepad" },
     {
-      name: "Navigate Grid / Sidebar",
-      keys: ["L-Stick", "/", "D-Pad"],
+      name: "Move",
+      keys: ["D-Pad", "/", "L-Stick"],
+      description: "Moves between everything on screen, including menus and dialogs. Hold to repeat.",
     },
+    { name: "Select", keys: ["A", "/", "✕"], description: "On a text field: opens the on-screen keyboard." },
+    { name: "Back / Close", keys: ["B", "/", "◯"] },
+    { name: "Search", keys: ["X", "/", "☐"] },
+    { name: "Home", keys: ["Y", "/", "△"] },
     {
-      name: "Select",
-      keys: ["A", "/", "✕"],
+      name: "Previous / Next Page",
+      keys: ["LB", "/", "RB"],
+      description: "Board → Discover → Library → Calendar → Addons → Settings.",
     },
+    { name: "Jump Up / Down", keys: ["LT", "/", "RT"] },
+    { name: "Scroll", keys: ["R-Stick"] },
+    { name: "Show / Hide Button Hints", keys: ["View"] },
     {
-      name: "Back",
-      keys: ["B", "/", "◯"],
-    },
-    {
-      name: "Return to Board",
-      keys: ["Y", "/", "⃤"],
-    },
-    {
-      name: "Layer Switch",
-      keys: ["X", "/", "☐"],
-      description:
-        "Jump between Navigation Menus (Top/Left) and the Content Grid.",
-    },
-    {
-      name: "Cycle Pages",
-      keys: ["L1", "/", "R1"],
-      description:
-        "Cycle through the 6 main pages (Board → Discover → Library → …).",
+      name: "On-screen Keyboard",
+      keys: ["X", "Y", "Start"],
+      description: "Delete, Space and Done (search).",
     },
 
     // ─── GAMEPAD PLAYER CONTROLS ───────────────────────────────────
-    { type: "header", name: "Gamepad — Player Controls", icon: "gamepad" },
-    {
-      name: "Seek / Volume",
-      keys: ["L-Stick", "/", "D-Pad"],
-    },
-    {
-      name: "Play / Pause",
-      keys: ["A", "/", "✕"],
-    },
-    {
-      name: "Skip Intro",
-      keys: ["X", "/", "☐"],
-    },
-    {
-      name: "Next Episode",
-      keys: ["Start"],
-    },
-    {
-      name: "Subtitle Track Menu",
-      keys: ["L3"],
-      description: "Press left stick.",
-    },
-    {
-      name: "Audio Track Menu",
-      keys: ["R3"],
-      description: "Press right stick.",
-    },
+    { type: "header", name: "Controller — Player", icon: "gamepad" },
+    { name: "Play / Pause", keys: ["A", "/", "✕"] },
+    { name: "Seek 10s", keys: ["◀", "/", "▶"], description: "Hold to keep seeking." },
+    { name: "Seek 85s", keys: ["LT", "/", "RT"] },
+    { name: "Speed −/+ 0.25", keys: ["LB", "/", "RB"] },
+    { name: "Player Menu", keys: ["Y", "/", "△"], description: "Subtitles, audio, speed, AnimeJaNai preset, next episode." },
+    { name: "Control Bar", keys: ["▲"], description: "▼ hides it again." },
+    { name: "Skip Intro", keys: ["X", "/", "☐"] },
+    { name: "Next Episode", keys: ["Start"] },
+    { name: "Episode List", keys: ["View"] },
+    { name: "Subtitle Menu", keys: ["L3"] },
+    { name: "Audio Menu", keys: ["R3"] },
+    { name: "Volume", keys: ["R-Stick ▲▼"] },
   ];
 
   // State

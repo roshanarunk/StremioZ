@@ -36,6 +36,7 @@ find_package(OpenSSL REQUIRED)
 find_package(CURL REQUIRED)
 find_package(nlohmann_json CONFIG REQUIRED)
 find_package(unofficial-webview2 CONFIG REQUIRED)
+find_package(SDL3 CONFIG REQUIRED) # StremioZ: controller input
 
 set(SOURCES
         src/main.cpp
@@ -73,6 +74,10 @@ set(SOURCES
         src/stremioz/webui.cpp
         src/stremioz/display_hdr.h
         src/stremioz/display_hdr.cpp
+        src/stremioz/ui_scale.h
+        src/stremioz/ui_scale.cpp
+        src/stremioz/gamepad.h
+        src/stremioz/gamepad.cpp
 )
 
 add_executable(${PROJECT_NAME} WIN32 ${SOURCES})
@@ -90,6 +95,7 @@ target_link_libraries(${PROJECT_NAME} PRIVATE
         OpenSSL::SSL
         OpenSSL::Crypto
         CURL::libcurl
+        SDL3::SDL3
         ${MPV_LIBRARY}
         ${DISCORD_LIB}
 )

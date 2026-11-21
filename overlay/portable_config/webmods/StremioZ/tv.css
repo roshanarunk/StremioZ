@@ -1,0 +1,187 @@
+/* StremioZ TV mode (webmods/StremioZ/tv-navigation.js) */
+
+/* Controller in use: no mouse cursor (and no hover effects) until the mouse
+   moves again; tv-navigation.js adds and removes this layer. */
+.szt-shield {
+  position: fixed;
+  inset: 0;
+  z-index: 2147482990;
+  cursor: none;
+  background: transparent;
+}
+
+/* A focus ring readable from the couch: a fixed layer over the focused
+   element (never clipped by its containers). The element gets .szt-focus. */
+.szt-ring {
+  position: fixed;
+  z-index: 2147483004;
+  display: none;
+  box-sizing: border-box;
+  border: 3px solid #8c6cff;
+  border-radius: 10px;
+  box-shadow: 0 0 0 3px rgba(140, 108, 255, 0.3), 0 0 26px rgba(140, 108, 255, 0.45);
+  pointer-events: none;
+}
+.szt-ring.on {
+  display: block;
+}
+.szt-ring.glide {
+  transition: left 0.14s ease-out, top 0.14s ease-out, width 0.14s ease-out, height 0.14s ease-out;
+}
+body.szt-tv .szt-focus {
+  outline: none !important;
+}
+
+/* Button hints */
+.szt-hints {
+  position: fixed;
+  right: 28px;
+  bottom: 20px;
+  z-index: 2147483000;
+  display: none;
+  gap: 18px;
+  padding: 10px 16px;
+  border-radius: 14px;
+  background: rgba(10, 8, 20, 0.72);
+  backdrop-filter: blur(8px);
+  color: #e8e6f0;
+  font: 500 15px/1 "Montserrat", "Segoe UI", sans-serif;
+  pointer-events: none;
+  opacity: 0;
+  transition: opacity 0.4s;
+}
+body.szt-tv .szt-hints:not(:empty) {
+  display: flex;
+}
+.szt-hints.show {
+  opacity: 1;
+}
+.szt-hint {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+}
+.szt-btn {
+  min-width: 24px;
+  height: 24px;
+  padding: 0 6px;
+  border-radius: 12px;
+  background: #ffffff;
+  color: #111;
+  font: 700 12px/24px "Segoe UI", sans-serif;
+  text-align: center;
+}
+
+/* Toast */
+.szt-toast {
+  position: fixed;
+  left: 50%;
+  top: 8%;
+  z-index: 2147483001;
+  transform: translateX(-50%);
+  padding: 12px 22px;
+  border-radius: 12px;
+  background: rgba(10, 8, 20, 0.82);
+  color: #fff;
+  font: 600 20px/1.2 "Montserrat", "Segoe UI", sans-serif;
+  opacity: 0;
+  transition: opacity 0.2s;
+  pointer-events: none;
+}
+.szt-toast.show {
+  opacity: 1;
+}
+
+/* Player quick menu */
+.szt-quick {
+  position: fixed;
+  right: 40px;
+  top: 50%;
+  z-index: 2147483002;
+  transform: translateY(-50%);
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 300px;
+  /* Clear of the button hints at the bottom. */
+  max-height: calc(100vh - 150px);
+  overflow-y: auto;
+  padding: 14px;
+  border-radius: 18px;
+  background: rgba(14, 11, 28, 0.92);
+  backdrop-filter: blur(10px);
+  box-shadow: 0 20px 60px rgba(0, 0, 0, 0.6);
+}
+.szt-quick > * {
+  flex-shrink: 0;
+}
+.szt-quick-title {
+  margin: 2px 6px 8px;
+  color: #a89ed8;
+  font: 700 14px/1 "Montserrat", "Segoe UI", sans-serif;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+.szt-quick-item {
+  padding: 9px 16px;
+  border: 0;
+  border-radius: 10px;
+  background: transparent;
+  color: #eceaf5;
+  font: 600 clamp(15px, 2.4vh, 20px) / 1.2 "Montserrat", "Segoe UI", sans-serif;
+  text-align: left;
+}
+.szt-quick-item.szt-focus {
+  background: rgba(140, 108, 255, 0.25);
+}
+
+/* On-screen keyboard */
+.szt-osk {
+  position: fixed;
+  left: 50%;
+  bottom: 84px;
+  z-index: 2147483003;
+  transform: translateX(-50%);
+  padding: 18px;
+  border-radius: 20px;
+  background: rgba(14, 11, 28, 0.95);
+  backdrop-filter: blur(10px);
+  box-shadow: 0 20px 60px rgba(0, 0, 0, 0.6);
+}
+.szt-osk-preview {
+  min-height: 34px;
+  margin: 0 4px 14px;
+  padding: 8px 12px;
+  border-radius: 10px;
+  background: rgba(255, 255, 255, 0.08);
+  color: #fff;
+  font: 500 22px/1.2 "Montserrat", "Segoe UI", sans-serif;
+  white-space: pre;
+  overflow: hidden;
+}
+.szt-osk-row {
+  display: flex;
+  justify-content: center;
+  gap: 8px;
+  margin-bottom: 8px;
+}
+.szt-osk-key {
+  width: 56px;
+  height: 52px;
+  border: 0;
+  border-radius: 10px;
+  background: rgba(255, 255, 255, 0.1);
+  color: #fff;
+  font: 600 20px/1 "Montserrat", "Segoe UI", sans-serif;
+}
+.szt-osk-key.wide {
+  width: auto;
+  min-width: 90px;
+  padding: 0 14px;
+}
+.szt-osk.shift .szt-osk-key:not(.wide) {
+  text-transform: uppercase;
+}
+.szt-osk-key.szt-focus {
+  background: #8c6cff;
+}

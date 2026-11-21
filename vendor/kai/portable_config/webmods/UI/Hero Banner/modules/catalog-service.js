@@ -303,6 +303,16 @@ class CatalogEnrichmentService {
 
       const [rawMovies, rawSeries] = await Promise.all(promises);
 
+      // StremioZ: a source that came back empty gives its slots to the other
+      // ("For You" often has no movies for someone who watches series).
+      if (rawMovies.length === 0 && seriesLimit > 0) {
+        seriesLimit += movieLimit;
+        movieLimit = 0;
+      } else if (rawSeries.length === 0 && movieLimit > 0) {
+        movieLimit += seriesLimit;
+        seriesLimit = 0;
+      }
+
       if (progressCallback)
         progressCallback("Pre-validating backgrounds...", 20);
 
@@ -748,6 +758,16 @@ class CatalogEnrichmentService {
         type,
       );
       return [];
+    }
+
+    // StremioZ: "For You" (webmods/StremioZ/hero-for-you.js)
+    if (url.startsWith("stremioz:for-you")) {
+      try {
+        return (await window.StremioZForYou?.getItems(type, limit)) || [];
+      } catch (e) {
+        console.error("[CatalogService] For You failed:", e);
+        return [];
+      }
     }
 
     // HELPER: Fetch with optional proxy fallback
