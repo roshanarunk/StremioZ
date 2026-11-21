@@ -41,5 +41,11 @@
     "repo": "Zaarrg/stremio-web-shell-fixes",
     "commit": "6f6b0558dbb064bca18a8dcc22cb1f3f4c455b22",
     "pnpm": "9.15.9"
+  },
+  "libaji": {
+    "_note": "libaji at the AnimeJaNai release's AjiVersion, patched so the TensorRT backend takes D3D11 frames; built by tools/build-libaji.ps1, replaces the package's aji_trt.dll",
+    "repo": "the-database/animejanai-inference",
+    "tag": "v0.32.0",
+    "patch": "patches/libaji-0.32.0-d3d11-bridge.patch"
   }
 }

@@ -80,6 +80,8 @@ foreach ($stale in 'scripts\skip-intro.lua', 'scripts\svp_cleanup.lua', 'scripts
                    'webmods\UI\donation-manager.js') {
     Remove-Item -Force -ErrorAction SilentlyContinue (Join-Path $cfg $stale)
 }
+# Phase 3's DirectML copy of animejanai.conf (no longer used).
+Remove-Item -Force -ErrorAction SilentlyContinue (Join-Path $Out 'animejanai/animejanai-stremioz-directml.conf')
 
 # Pinned Stremio web UI (tools/build-webui.ps1). Mirrored, so an old build's
 # asset folder does not linger.
@@ -104,6 +106,11 @@ if (-not (Test-Path $ajn)) { throw 'AnimeJaNai runtime missing: run tools\fetch-
 Get-ChildItem $ajn -File | Where-Object Name -notlike '.*' | Copy-Item -Force -Destination $Out
 Copy-Tree (Join-Path $ajn 'licenses') (Join-Path $Out 'licenses')
 Copy-Tree (Join-Path $ajn 'animejanai\inference') (Join-Path $Out 'animejanai\inference')
+# StremioZ's aji_trt.dll (TensorRT on D3D11 frames, tools/build-libaji.ps1) over the package's.
+$patchedTrt = Join-Path $Deps 'libaji\aji_trt.dll'
+if (Test-Path $patchedTrt) {
+    Copy-Item -Force $patchedTrt (Join-Path $Out 'animejanai\inference\aji_trt.dll')
+} else { Write-Warning 'patched aji_trt.dll missing (tools/build-libaji.ps1): TensorRT will not take D3D11 frames' }
 Copy-Tree (Join-Path $ajn 'animejanai\onnx') (Join-Path $Out 'animejanai\onnx')
 Copy-IfMissing (Join-Path $ajn 'animejanai\animejanai.conf') (Join-Path $Out 'animejanai\animejanai.conf')
 Copy-Tree (Join-Path $ajn 'portable_config') $cfg

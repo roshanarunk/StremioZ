@@ -1,0 +1,975 @@
+diff --git a/CMakeLists.txt b/CMakeLists.txt
+index 79a8902..cf72ac0 100644
+--- a/CMakeLists.txt
++++ b/CMakeLists.txt
+@@ -149,12 +149,17 @@ set_target_properties(aji_native PROPERTIES
+ 
+ # aji_trt: TensorRT/CUDA backend (the former aji.dll).
+ add_library(aji_trt SHARED src/aji_trt.cpp src/core/trt_engine.cpp
+-    src/aji_img_trt.cpp $<TARGET_OBJECTS:aji_trt_common> $<TARGET_OBJECTS:aji_native>)
++    src/aji_img_trt.cpp src/d3d11_bridge.cpp
++    $<TARGET_OBJECTS:aji_trt_common> $<TARGET_OBJECTS:aji_native>)
+ target_include_directories(aji_trt
+     PUBLIC include
+     PRIVATE ${AJI_TRT_INCLUDE} src)
+ target_link_directories(aji_trt PRIVATE ${AJI_TRT_LIB})
+ target_link_libraries(aji_trt PRIVATE ${AJI_NVINFER} CUDA::cuda_driver CUDA::cudart)
++if(WIN32)
++    # D3D11 frames on TensorRT (src/d3d11_bridge.cpp)
++    target_link_libraries(aji_trt PRIVATE d3d11 d3d12 dxgi)
++endif()
+ set_target_properties(aji_trt PROPERTIES
+     BUILD_RPATH "${AJI_TRT_LIB}"
+     INSTALL_RPATH "${AJI_TRT_LIB}"
+@@ -240,7 +245,7 @@ if(AJI_TRTRTX_ROOT)
+     endif()
+     message(STATUS "aji_trtrtx: TensorRT-RTX ${_rtx_major}.${_rtx_minor} "
+                    "(${_rtx_libs})")
+-    add_library(aji_trtrtx SHARED src/aji_trt.cpp src/core/trt_engine.cpp
++    add_library(aji_trtrtx SHARED src/aji_trt.cpp src/d3d11_bridge.cpp src/core/trt_engine.cpp
+         src/aji_img_trt.cpp $<TARGET_OBJECTS:aji_trt_common> $<TARGET_OBJECTS:aji_native>)
+     target_compile_definitions(aji_trtrtx PRIVATE AJI_TRTRTX)
+     target_include_directories(aji_trtrtx
+@@ -248,6 +253,9 @@ if(AJI_TRTRTX_ROOT)
+         PRIVATE "${_rtx_root}/include" src)
+     target_link_directories(aji_trtrtx PRIVATE ${AJI_TRTRTX_LIB})
+     target_link_libraries(aji_trtrtx PRIVATE ${_rtx_libs}
++    if(WIN32)
++        target_link_libraries(aji_trtrtx PRIVATE d3d11 d3d12 dxgi)
++    endif()
+         CUDA::cuda_driver CUDA::cudart)
+     set_target_properties(aji_trtrtx PROPERTIES
+         BUILD_RPATH "${AJI_TRTRTX_LIB}"
+diff --git a/src/aji_trt.cpp b/src/aji_trt.cpp
+index cfaab96..3f01ed0 100644
+--- a/src/aji_trt.cpp
++++ b/src/aji_trt.cpp
+@@ -48,6 +48,7 @@
+ #include "aji.h"
+ #include "aji_cuda_init.h"
+ #include "aji_conf.h"
++#include "d3d11_bridge.h"
+ #include "kernels.h"
+ #include "onnx_shape.h"
+ #include "core/fileio.h"
+@@ -117,6 +118,11 @@ struct aji_ctx {
+     CUdevice cu_dev = 0;
+     int cuda_dev = 0;
+     std::string gpu_name;   // cu_dev's name, for the "GPU:" line of the log
++#ifdef _WIN32
++    // D3D11 frames (the caller passed d3d11_device and no CUDA context):
++    // every frame-taking call runs on CUDA views of them (d3d11_bridge.h).
++    std::unique_ptr<ajid3d::Bridge> d3d;
++#endif
+ 
+     std::unique_ptr<nvinfer1::IRuntime> runtime;
+ 
+@@ -1085,6 +1091,21 @@ std::string fmt_num(double v)
+ 
+ } // namespace
+ 
++#ifdef _WIN32
++// Runs fn on CUDA views of the caller's D3D11 frames.
++static int d3d_run(aji_ctx *c, const aji_frame *const *ins, int n_in,
++                   const aji_frame *const *outs, int n_out,
++                   const ajid3d::Bridge::Fn &fn)
++{
++    std::string err;
++    const int r = c->d3d->run(ins, n_in, outs, n_out, fn, err);
++    if (!err.empty())
++        c->set_error("D3D11 frames: %s", err.c_str());
++    return r;
++}
++#define AJI_D3D(c) ((c) && (c)->d3d && !(c)->d3d->busy())
++#endif
++
+ extern "C" AJI_EXPORT aji_ctx *aji_create(const aji_create_params *params)
+ {
+     if (!params || params->api_version != AJI_API_VERSION)
+@@ -1108,8 +1129,21 @@ extern "C" AJI_EXPORT aji_ctx *aji_create(const aji_create_params *params)
+         c->cu_ctx = (CUcontext)params->cuda_context;
+     } else {
+         CUdevice dev;
++#ifdef _WIN32
++        if (params->d3d11_device) {
++            std::string err;
++            c->d3d = ajid3d::create(params->d3d11_device, err);
++            if (!c->d3d) {
++                c->set_error("D3D11 frames: %s", err.c_str());
++                return nullptr;
++            }
++        }
++        if ((c->d3d ? (dev = c->d3d->cuda_device(), CUDA_SUCCESS) : cuDeviceGet(&dev, 0)) != CUDA_SUCCESS ||
++            cuDevicePrimaryCtxRetain(&c->cu_ctx, dev) != CUDA_SUCCESS) {
++#else
+         if (cuDeviceGet(&dev, 0) != CUDA_SUCCESS ||
+             cuDevicePrimaryCtxRetain(&c->cu_ctx, dev) != CUDA_SUCCESS) {
++#endif
+             c->set_error("failed to retain primary CUDA context");
+             return nullptr;
+         }
+@@ -1135,6 +1169,19 @@ extern "C" AJI_EXPORT aji_ctx *aji_create(const aji_create_params *params)
+         if (cuDeviceGetName(name, sizeof(name), c->cu_dev) == CUDA_SUCCESS)
+             c->gpu_name = name;
+     }
++#ifdef _WIN32
++    if (c->d3d) {
++        std::string err;
++        if (!c->d3d->attach(c->cu_ctx, err)) {
++            c->set_error("D3D11 frames: %s", err.c_str());
++            c->d3d.reset();
++            if (c->owns_primary)
++                cuDevicePrimaryCtxRelease(c->cu_dev);
++            return nullptr;
++        }
++        c->verbose("D3D11 frames: CUDA bridge on %s", c->gpu_name.c_str());
++    }
++#endif
+ 
+     c->runtime.reset(nvinfer1::createInferRuntime(c->logger));
+ #ifdef AJI_TRTRTX
+@@ -1892,6 +1939,13 @@ static bool infer_via_graph(aji_ctx *c, const aji_frame *in,
+ extern "C" AJI_EXPORT int aji_infer(aji_ctx *c, const aji_frame *in,
+                                     const aji_frame *out, void *cu_stream)
+ {
++#ifdef _WIN32
++    if (AJI_D3D(c) && in && out) {
++        const aji_frame *bi[1] = {in}, *bo[1] = {out};
++        return d3d_run(c, bi, 1, bo, 1, [&](const aji_frame *const *I, const aji_frame *const *O, CUstream s) {
++            return aji_infer(c, I[0], O[0], (void *)s); });
++    }
++#endif
+     if (!c || !in || !out)
+         return AJI_ERR;
+     if (!c->active) {
+@@ -2252,6 +2306,13 @@ static int temporal_store(aji_ctx *c, size_t lv, const void *src,
+ extern "C" AJI_EXPORT int aji_ingest(aji_ctx *c, const aji_frame *in,
+                                      uint64_t seq, void *cu_stream)
+ {
++#ifdef _WIN32
++    if (AJI_D3D(c) && in) {
++        const aji_frame *bi[1] = {in};
++        return d3d_run(c, bi, 1, nullptr, 0, [&](const aji_frame *const *I, const aji_frame *const *, CUstream s) {
++            return aji_ingest(c, I[0], seq, (void *)s); });
++    }
++#endif
+     if (!c || !in)
+         return AJI_ERR;
+     auto &TT = c->temporal;
+@@ -2453,6 +2514,13 @@ static int temporal_ensure(aji_ctx *c, size_t lv, int64_t p,
+ extern "C" AJI_EXPORT int aji_infer_seq(aji_ctx *c, uint64_t seq,
+                                         const aji_frame *out, void *cu_stream)
+ {
++#ifdef _WIN32
++    if (AJI_D3D(c) && out) {
++        const aji_frame *bo[1] = {out};
++        return d3d_run(c, nullptr, 0, bo, 1, [&](const aji_frame *const *, const aji_frame *const *O, CUstream s) {
++            return aji_infer_seq(c, seq, O[0], (void *)s); });
++    }
++#endif
+     if (!c || !out)
+         return AJI_ERR;
+     auto &TT = c->temporal;
+@@ -2613,6 +2681,13 @@ int resize_through_rgb(aji_ctx *c, const aji_frame *in, const aji_frame *out,
+ extern "C" AJI_EXPORT int aji_resize(aji_ctx *c, const aji_frame *in,
+                                      const aji_frame *out, void *cu_stream)
+ {
++#ifdef _WIN32
++    if (AJI_D3D(c) && in && out) {
++        const aji_frame *bi[1] = {in}, *bo[1] = {out};
++        return d3d_run(c, bi, 1, bo, 1, [&](const aji_frame *const *I, const aji_frame *const *O, CUstream s) {
++            return aji_resize(c, I[0], O[0], (void *)s); });
++    }
++#endif
+     if (!c || !in || !out)
+         return AJI_ERR;
+     if (!c->has_pre_resize || !c->pre_resize_plan) {
+@@ -2651,6 +2726,13 @@ extern "C" AJI_EXPORT int aji_resize(aji_ctx *c, const aji_frame *in,
+ extern "C" AJI_EXPORT int aji_resize_frame(aji_ctx *c, const aji_frame *in,
+                                            const aji_frame *out, void *cu_stream)
+ {
++#ifdef _WIN32
++    if (AJI_D3D(c) && in && out) {
++        const aji_frame *bi[1] = {in}, *bo[1] = {out};
++        return d3d_run(c, bi, 1, bo, 1, [&](const aji_frame *const *I, const aji_frame *const *O, CUstream s) {
++            return aji_resize_frame(c, I[0], O[0], (void *)s); });
++    }
++#endif
+     if (!c || !in || !out)
+         return AJI_ERR;
+     if (in->format != AJI_FMT_NV12 && in->format != AJI_FMT_P010 &&
+@@ -2715,6 +2797,13 @@ extern "C" AJI_EXPORT int aji_frame_diff(aji_ctx *c, const aji_frame *a,
+                                          aji_frame_diff_result *out,
+                                          void *cu_stream)
+ {
++#ifdef _WIN32
++    if (AJI_D3D(c) && a && b && out) {
++        const aji_frame *bi[2] = {a, b};
++        return d3d_run(c, bi, 2, nullptr, 0, [&](const aji_frame *const *I, const aji_frame *const *, CUstream s) {
++            return aji_frame_diff(c, I[0], I[1], out, (void *)s); });
++    }
++#endif
+     if (!c || !a || !b || !out)
+         return AJI_ERR;
+     if (a->format != AJI_FMT_NV12 && a->format != AJI_FMT_P010 &&
+@@ -2769,6 +2858,10 @@ extern "C" AJI_EXPORT int aji_frame_diff(aji_ctx *c, const aji_frame *a,
+ 
+ extern "C" AJI_EXPORT uint64_t aji_flush(aji_ctx *c, void *cu_stream)
+ {
++#ifdef _WIN32
++    if (c && c->d3d)
++        return c->d3d->flush();
++#endif
+     if (!c)
+         return 0;
+     CtxGuard guard(c->cu_ctx);
+@@ -2800,6 +2893,10 @@ extern "C" AJI_EXPORT uint64_t aji_flush(aji_ctx *c, void *cu_stream)
+ 
+ extern "C" AJI_EXPORT int aji_done(aji_ctx *c, uint64_t ticket)
+ {
++#ifdef _WIN32
++    if (c && c->d3d)
++        return c->d3d->done(ticket);
++#endif
+     if (!c)
+         return AJI_ERR;
+     if (ticket <= c->tick_completed)
+@@ -2822,6 +2919,10 @@ extern "C" AJI_EXPORT int aji_done(aji_ctx *c, uint64_t ticket)
+ 
+ extern "C" AJI_EXPORT int aji_wait(aji_ctx *c, uint64_t ticket)
+ {
++#ifdef _WIN32
++    if (c && c->d3d)
++        return c->d3d->wait(ticket);
++#endif
+     if (!c)
+         return AJI_ERR;
+     if (ticket <= c->tick_completed)
+@@ -2917,6 +3018,13 @@ extern "C" AJI_EXPORT int aji_infer_rife_with_scene(aji_ctx *c, const aji_frame
+                                          const aji_frame *out, void *cu_stream,
+                                          int scene)
+ {
++#ifdef _WIN32
++    if (AJI_D3D(c) && a && b && out) {
++        const aji_frame *bi[2] = {a, b}, *bo[1] = {out};
++        return d3d_run(c, bi, 2, bo, 1, [&](const aji_frame *const *I, const aji_frame *const *O, CUstream s) {
++            return aji_infer_rife_with_scene(c, I[0], I[1], t, O[0], (void *)s, scene); });
++    }
++#endif
+     if (!c || !a || !b || !out || scene < -1 || scene > 1)
+         return AJI_ERR;
+     auto &R = c->rife;
+@@ -3150,6 +3258,9 @@ extern "C" AJI_EXPORT void aji_destroy(aji_ctx **pc)
+     // Stop any in-flight engine build (player quit shouldn't wait minutes
+     // for trtexec); the worker's failure path removes the partial engine.
+     c->build.stop();
++#ifdef _WIN32
++    c->d3d.reset();   // waits for its queued work; needs the context alive
++#endif
+     {
+         CtxGuard guard(c->cu_ctx);
+         cudaDeviceSynchronize();    // in-flight ticketed work
+diff --git a/src/d3d11_bridge.cpp b/src/d3d11_bridge.cpp
+new file mode 100644
+index 0000000..8622029
+--- /dev/null
++++ b/src/d3d11_bridge.cpp
+@@ -0,0 +1,622 @@
++// d3d11_bridge.cpp - see d3d11_bridge.h.
++#include "d3d11_bridge.h"
++
++#ifdef _WIN32
++
++#include <windows.h>
++#include <d3d11_4.h>
++#include <d3d12.h>
++#include <dxgi1_2.h>
++#include <wrl/client.h>
++
++#include <cstdio>
++#include <cstring>
++#include <unordered_map>
++#include <vector>
++
++using Microsoft::WRL::ComPtr;
++
++namespace ajid3d {
++namespace {
++
++std::string cu_str(CUresult r)
++{
++    const char *s = nullptr;
++    cuGetErrorName(r, &s);
++    return s ? s : "unknown CUDA error";
++}
++
++std::string hr_str(HRESULT h)
++{
++    char b[16];
++    snprintf(b, sizeof b, "0x%08lx", (unsigned long)h);
++    return b;
++}
++
++UINT64 align_up(UINT64 v, UINT64 a) { return (v + a - 1) / a * a; }
++
++// A linear D3D12 buffer that CUDA sees as device memory.
++struct Staging {
++    ComPtr<ID3D12Resource> buf;
++    CUexternalMemory mem = nullptr;
++    CUdeviceptr ptr = 0;
++    UINT64 size = 0;
++};
++
++// A caller texture opened on our D3D12 device. keep11 pins the D3D11 texture,
++// so its address can't come back as another texture's while cached (a cache
++// keyed by address alone misreads once a freed texture's address is reused).
++struct Tex {
++    ComPtr<ID3D12Resource> r12;
++    ComPtr<IUnknown> keep11;
++    D3D12_RESOURCE_DESC desc = {};
++};
++
++// Where one frame's two planes sit in a staging buffer.
++struct Layout {
++    D3D12_PLACED_SUBRESOURCE_FOOTPRINT fp[2] = {};
++    UINT subres[2] = {};
++    UINT64 total = 0;
++};
++
++class Impl final : public Bridge {
++public:
++    ~Impl() override;
++
++    CUdevice cuda_device() const override { return cudev_; }
++    bool attach(CUcontext ctx, std::string &err) override;
++    int run(const aji_frame *const *ins, int n_in, const aji_frame *const *outs,
++            int n_out, const Fn &fn, std::string &err) override;
++    bool busy() const override { return in_fn_; }
++    CUstream stream() const override { return stream_; }
++    uint64_t flush() override { return value_; }
++    int done(uint64_t ticket) override;
++    int wait(uint64_t ticket) override;
++
++    bool init(void *d3d11_device, std::string &err);
++
++private:
++    struct Cmd {
++        ComPtr<ID3D12CommandAllocator> alloc;
++        ComPtr<ID3D12GraphicsCommandList> list;
++        UINT64 busy_until = 0;
++    };
++
++    bool open_tex(void *tex11, Tex **out, std::string &err);
++    int layout_for(const Tex &t, const aji_frame &f, Layout &L, std::string &err);
++    bool ensure_staging(int role, UINT64 bytes, std::string &err);
++    void free_staging(Staging &s);
++    bool wait_value(UINT64 v, DWORD timeout_ms);
++    bool idle();
++    ID3D12GraphicsCommandList *begin_cmd(std::string &err);
++    bool submit_cmd(std::string &err);
++    void transition(ID3D12GraphicsCommandList *l, const Tex &t, const Layout &L,
++                    D3D12_RESOURCE_STATES from, D3D12_RESOURCE_STATES to);
++
++    ComPtr<ID3D11Device> dev11_;
++    ComPtr<ID3D11Device5> dev11_5_;
++    ComPtr<ID3D11DeviceContext> ctx11_;
++    ComPtr<ID3D11DeviceContext4> ctx11_4_;
++    ComPtr<ID3D12Device> dev12_;
++    ComPtr<ID3D12CommandQueue> queue_;
++    ComPtr<ID3D12Fence> fence12_;
++    ComPtr<ID3D11Fence> fence11_;
++    HANDLE event_ = nullptr;
++    std::vector<Cmd> cmds_;
++    size_t cmd_next_ = 0;
++    Cmd *cmd_cur_ = nullptr;
++
++    UINT64 value_ = 0;   // last fence value enqueued by anyone in the chain
++
++    CUdevice cudev_ = -1;
++    CUcontext cu_ = nullptr;
++    CUstream stream_ = nullptr;
++    CUexternalSemaphore sem_ = nullptr;
++
++    std::unordered_map<void *, Tex> texs_;
++    static constexpr int kRoles = 8;   // 0..3 inputs, 4..7 outputs
++    Staging staging_[kRoles];
++    bool in_fn_ = false;
++};
++
++struct CtxPush {
++    bool ok;
++    explicit CtxPush(CUcontext c) : ok(c && cuCtxPushCurrent(c) == CUDA_SUCCESS) {}
++    ~CtxPush() { if (ok) { CUcontext d; cuCtxPopCurrent(&d); } }
++};
++
++bool Impl::init(void *d3d11_device, std::string &err)
++{
++    dev11_ = static_cast<ID3D11Device *>(d3d11_device);
++    if (FAILED(dev11_.As(&dev11_5_))) {
++        err = "D3D11 frames need ID3D11Device5 (Windows 10 1703 or later)";
++        return false;
++    }
++    dev11_->GetImmediateContext(&ctx11_);
++    if (FAILED(ctx11_.As(&ctx11_4_))) {
++        err = "D3D11 frames need ID3D11DeviceContext4";
++        return false;
++    }
++    ComPtr<IDXGIDevice> dxgi;
++    ComPtr<IDXGIAdapter> adapter;
++    DXGI_ADAPTER_DESC ad = {};
++    if (FAILED(dev11_.As(&dxgi)) || FAILED(dxgi->GetAdapter(&adapter)) ||
++        FAILED(adapter->GetDesc(&ad))) {
++        err = "could not get the D3D11 device's adapter";
++        return false;
++    }
++
++    // The CUDA device on the same adapter, by LUID.
++    if (cuInit(0) != CUDA_SUCCESS) {
++        err = "cuInit failed";
++        return false;
++    }
++    int n = 0;
++    cuDeviceGetCount(&n);
++    for (int i = 0; i < n && cudev_ < 0; i++) {
++        CUdevice d;
++        char luid[8];
++        unsigned mask = 0;
++        if (cuDeviceGet(&d, i) == CUDA_SUCCESS &&
++            cuDeviceGetLuid(luid, &mask, d) == CUDA_SUCCESS &&
++            memcmp(luid, &ad.AdapterLuid, sizeof luid) == 0)
++            cudev_ = d;
++    }
++    if (cudev_ < 0) {
++        char name[128];
++        WideCharToMultiByte(CP_UTF8, 0, ad.Description, -1, name, sizeof name, nullptr, nullptr);
++        err = std::string("no CUDA device on the D3D11 adapter (") + name +
++              "): TensorRT needs the video decoded on an NVIDIA GPU";
++        return false;
++    }
++
++    HRESULT hr = D3D12CreateDevice(adapter.Get(), D3D_FEATURE_LEVEL_11_0, IID_PPV_ARGS(&dev12_));
++    if (FAILED(hr)) {
++        err = "D3D12CreateDevice failed (" + hr_str(hr) + ")";
++        return false;
++    }
++    D3D12_COMMAND_QUEUE_DESC qd = {};
++    qd.Type = D3D12_COMMAND_LIST_TYPE_COPY;
++    if (FAILED(hr = dev12_->CreateCommandQueue(&qd, IID_PPV_ARGS(&queue_)))) {
++        err = "D3D12 copy queue creation failed (" + hr_str(hr) + ")";
++        return false;
++    }
++    if (FAILED(hr = dev12_->CreateFence(0, D3D12_FENCE_FLAG_SHARED, IID_PPV_ARGS(&fence12_)))) {
++        err = "D3D12 shared fence creation failed (" + hr_str(hr) + ")";
++        return false;
++    }
++    HANDLE fh = nullptr;
++    if (FAILED(hr = dev12_->CreateSharedHandle(fence12_.Get(), nullptr, GENERIC_ALL, nullptr, &fh))) {
++        err = "sharing the D3D12 fence failed (" + hr_str(hr) + ")";
++        return false;
++    }
++    hr = dev11_5_->OpenSharedFence(fh, IID_PPV_ARGS(&fence11_));
++    CloseHandle(fh);
++    if (FAILED(hr)) {
++        err = "opening the fence on D3D11 failed (" + hr_str(hr) + ")";
++        return false;
++    }
++    event_ = CreateEventW(nullptr, FALSE, FALSE, nullptr);
++    cmds_.resize(4);
++    for (Cmd &c : cmds_) {
++        if (FAILED(dev12_->CreateCommandAllocator(D3D12_COMMAND_LIST_TYPE_COPY, IID_PPV_ARGS(&c.alloc))) ||
++            FAILED(dev12_->CreateCommandList(0, D3D12_COMMAND_LIST_TYPE_COPY, c.alloc.Get(), nullptr,
++                                             IID_PPV_ARGS(&c.list)))) {
++            err = "D3D12 command list creation failed";
++            return false;
++        }
++        c.list->Close();
++    }
++    return event_ != nullptr;
++}
++
++bool Impl::attach(CUcontext ctx, std::string &err)
++{
++    cu_ = ctx;
++    CtxPush g(cu_);
++    if (!g.ok) {
++        err = "cuCtxPushCurrent failed";
++        return false;
++    }
++    CUresult r = cuStreamCreate(&stream_, CU_STREAM_NON_BLOCKING);
++    if (r != CUDA_SUCCESS) {
++        err = "cuStreamCreate failed: " + cu_str(r);
++        return false;
++    }
++    HANDLE fh = nullptr;
++    HRESULT hr = dev12_->CreateSharedHandle(fence12_.Get(), nullptr, GENERIC_ALL, nullptr, &fh);
++    if (FAILED(hr)) {
++        err = "sharing the D3D12 fence with CUDA failed (" + hr_str(hr) + ")";
++        return false;
++    }
++    CUDA_EXTERNAL_SEMAPHORE_HANDLE_DESC sd = {};
++    sd.type = CU_EXTERNAL_SEMAPHORE_HANDLE_TYPE_D3D12_FENCE;
++    sd.handle.win32.handle = fh;
++    r = cuImportExternalSemaphore(&sem_, &sd);
++    CloseHandle(fh);
++    if (r != CUDA_SUCCESS) {
++        err = "importing the D3D12 fence into CUDA failed: " + cu_str(r);
++        return false;
++    }
++    return true;
++}
++
++Impl::~Impl()
++{
++    idle();
++    {
++        CtxPush g(cu_);
++        for (Staging &s : staging_)
++            free_staging(s);
++        if (sem_)
++            cuDestroyExternalSemaphore(sem_);
++        if (stream_)
++            cuStreamDestroy(stream_);
++    }
++    texs_.clear();
++    if (event_)
++        CloseHandle(event_);
++}
++
++bool Impl::wait_value(UINT64 v, DWORD timeout_ms)
++{
++    if (!fence12_ || fence12_->GetCompletedValue() >= v)
++        return true;
++    fence12_->SetEventOnCompletion(v, event_);
++    return WaitForSingleObject(event_, timeout_ms) == WAIT_OBJECT_0;
++}
++
++// Everything enqueued so far has finished (D3D12 copies, CUDA work).
++bool Impl::idle()
++{
++    bool ok = wait_value(value_, 10000);
++    if (stream_) {
++        CtxPush g(cu_);
++        ok &= cuStreamSynchronize(stream_) == CUDA_SUCCESS;
++    }
++    return ok;
++}
++
++bool Impl::open_tex(void *tex11, Tex **out, std::string &err)
++{
++    auto it = texs_.find(tex11);
++    if (it != texs_.end()) {
++        *out = &it->second;
++        return true;
++    }
++    ComPtr<IDXGIResource1> dxgi;
++    if (FAILED(static_cast<IUnknown *>(tex11)->QueryInterface(IID_PPV_ARGS(&dxgi)))) {
++        err = "frame texture is not a DXGI resource";
++        return false;
++    }
++    HANDLE h = nullptr;
++    HRESULT hr = dxgi->CreateSharedHandle(nullptr, DXGI_SHARED_RESOURCE_READ | DXGI_SHARED_RESOURCE_WRITE,
++                                          nullptr, &h);
++    if (FAILED(hr)) {
++        err = "CreateSharedHandle failed (" + hr_str(hr) + "; frame textures must be created "
++              "with SHARED | SHARED_NTHANDLE)";
++        return false;
++    }
++    Tex t;
++    hr = dev12_->OpenSharedHandle(h, IID_PPV_ARGS(&t.r12));
++    CloseHandle(h);
++    if (FAILED(hr)) {
++        err = "D3D12 OpenSharedHandle failed (" + hr_str(hr) + ")";
++        return false;
++    }
++    t.keep11 = static_cast<IUnknown *>(tex11);
++    t.desc = t.r12->GetDesc();
++    *out = &(texs_[tex11] = std::move(t));
++    return true;
++}
++
++// The frame's planes (a box of the frame's size: decoder surfaces are padded,
++// 1920x1088 for 1080p) in a staging buffer.
++int Impl::layout_for(const Tex &t, const aji_frame &f, Layout &L, std::string &err)
++{
++    const bool p010 = f.format == AJI_FMT_P010;
++    if (f.format != AJI_FMT_NV12 && !p010) {
++        err = "D3D11 frames on TensorRT: unsupported format " + std::to_string(f.format) +
++              " (NV12 or P010)";
++        return AJI_ERR_FORMAT;
++    }
++    if (t.desc.Format != (p010 ? DXGI_FORMAT_P010 : DXGI_FORMAT_NV12)) {
++        err = "D3D11 frame texture format does not match the frame's";
++        return AJI_ERR_FORMAT;
++    }
++    if (f.width < 2 || f.height < 2 || (f.width & 1) || (f.height & 1) ||
++        (UINT64)f.width > t.desc.Width || (UINT)f.height > t.desc.Height) {
++        err = "D3D11 frame size does not fit its texture";
++        return AJI_ERR_SHAPE;
++    }
++    const UINT sub = (UINT)(intptr_t)f.plane[1];
++    const UINT slices = t.desc.DepthOrArraySize ? t.desc.DepthOrArraySize : 1;
++    const UINT bpe = p010 ? 2 : 1;
++    UINT64 off = 0;
++    for (int p = 0; p < 2; p++) {
++        D3D12_PLACED_SUBRESOURCE_FOOTPRINT &fp = L.fp[p];
++        fp.Offset = off;
++        fp.Footprint.Format = p ? (p010 ? DXGI_FORMAT_R16G16_UNORM : DXGI_FORMAT_R8G8_UNORM)
++                                : (p010 ? DXGI_FORMAT_R16_UNORM : DXGI_FORMAT_R8_UNORM);
++        fp.Footprint.Width = p ? f.width / 2 : f.width;
++        fp.Footprint.Height = p ? f.height / 2 : f.height;
++        fp.Footprint.Depth = 1;
++        fp.Footprint.RowPitch = (UINT)align_up((UINT64)fp.Footprint.Width * bpe * (p ? 2 : 1),
++                                               D3D12_TEXTURE_DATA_PITCH_ALIGNMENT);
++        L.subres[p] = sub + (UINT)p * slices;
++        off = align_up(off + (UINT64)fp.Footprint.RowPitch * fp.Footprint.Height,
++                       D3D12_TEXTURE_DATA_PLACEMENT_ALIGNMENT);
++    }
++    // Slack past the planes: drivers widen loads past a plane's end.
++    L.total = off + 8192;
++    return AJI_OK;
++}
++
++void Impl::free_staging(Staging &s)
++{
++    if (s.ptr)
++        cuMemFree(s.ptr);
++    if (s.mem)
++        cuDestroyExternalMemory(s.mem);
++    s = Staging();
++}
++
++bool Impl::ensure_staging(int role, UINT64 bytes, std::string &err)
++{
++    Staging &s = staging_[role];
++    if (s.size >= bytes)
++        return true;
++    idle();   // the old buffer may still be read or written
++    free_staging(s);
++
++    bytes = align_up(bytes, 65536);
++    D3D12_HEAP_PROPERTIES hp = {};
++    hp.Type = D3D12_HEAP_TYPE_DEFAULT;
++    D3D12_RESOURCE_DESC rd = {};
++    rd.Dimension = D3D12_RESOURCE_DIMENSION_BUFFER;
++    rd.Width = bytes;
++    rd.Height = 1;
++    rd.DepthOrArraySize = 1;
++    rd.MipLevels = 1;
++    rd.SampleDesc.Count = 1;
++    rd.Layout = D3D12_TEXTURE_LAYOUT_ROW_MAJOR;
++    HRESULT hr = dev12_->CreateCommittedResource(&hp, D3D12_HEAP_FLAG_SHARED, &rd,
++                                                 D3D12_RESOURCE_STATE_COMMON, nullptr,
++                                                 IID_PPV_ARGS(&s.buf));
++    if (FAILED(hr)) {
++        err = "staging buffer allocation failed (" + hr_str(hr) + ")";
++        return false;
++    }
++    HANDLE h = nullptr;
++    if (FAILED(hr = dev12_->CreateSharedHandle(s.buf.Get(), nullptr, GENERIC_ALL, nullptr, &h))) {
++        err = "sharing a staging buffer failed (" + hr_str(hr) + ")";
++        return false;
++    }
++    const D3D12_RESOURCE_ALLOCATION_INFO ai = dev12_->GetResourceAllocationInfo(0, 1, &rd);
++    CUDA_EXTERNAL_MEMORY_HANDLE_DESC md = {};
++    md.type = CU_EXTERNAL_MEMORY_HANDLE_TYPE_D3D12_RESOURCE;
++    md.handle.win32.handle = h;
++    md.size = ai.SizeInBytes;
++    md.flags = CUDA_EXTERNAL_MEMORY_DEDICATED;
++    CUresult r = cuImportExternalMemory(&s.mem, &md);
++    CloseHandle(h);
++    if (r != CUDA_SUCCESS) {
++        err = "importing a staging buffer into CUDA failed: " + cu_str(r);
++        return false;
++    }
++    CUDA_EXTERNAL_MEMORY_BUFFER_DESC bd = {};
++    bd.size = bytes;
++    if ((r = cuExternalMemoryGetMappedBuffer(&s.ptr, s.mem, &bd)) != CUDA_SUCCESS) {
++        err = "mapping a staging buffer in CUDA failed: " + cu_str(r);
++        free_staging(s);
++        return false;
++    }
++    s.size = bytes;
++    return true;
++}
++
++ID3D12GraphicsCommandList *Impl::begin_cmd(std::string &err)
++{
++    Cmd &c = cmds_[cmd_next_++ % cmds_.size()];
++    if (!wait_value(c.busy_until, 10000)) {
++        err = "D3D12 copy queue stalled";
++        return nullptr;
++    }
++    if (FAILED(c.alloc->Reset()) || FAILED(c.list->Reset(c.alloc.Get(), nullptr))) {
++        err = "D3D12 command list reset failed";
++        return nullptr;
++    }
++    cmd_cur_ = &c;
++    return c.list.Get();
++}
++
++// Executes the open list and signals the next fence value after it.
++bool Impl::submit_cmd(std::string &err)
++{
++    if (FAILED(cmd_cur_->list->Close())) {
++        err = "D3D12 command list close failed";
++        return false;
++    }
++    ID3D12CommandList *l = cmd_cur_->list.Get();
++    queue_->ExecuteCommandLists(1, &l);
++    queue_->Signal(fence12_.Get(), ++value_);
++    cmd_cur_->busy_until = value_;
++    cmd_cur_ = nullptr;
++    return true;
++}
++
++void Impl::transition(ID3D12GraphicsCommandList *l, const Tex &t, const Layout &L,
++                      D3D12_RESOURCE_STATES from, D3D12_RESOURCE_STATES to)
++{
++    D3D12_RESOURCE_BARRIER b[2] = {};
++    for (int p = 0; p < 2; p++) {
++        b[p].Type = D3D12_RESOURCE_BARRIER_TYPE_TRANSITION;
++        b[p].Transition.pResource = t.r12.Get();
++        b[p].Transition.Subresource = L.subres[p];
++        b[p].Transition.StateBefore = from;
++        b[p].Transition.StateAfter = to;
++    }
++    l->ResourceBarrier(2, b);
++}
++
++int Impl::run(const aji_frame *const *ins, int n_in, const aji_frame *const *outs,
++              int n_out, const Fn &fn, std::string &err)
++{
++    if (n_in > 4 || n_out > 4)
++        return AJI_ERR;
++    CtxPush g(cu_);
++    if (!g.ok) {
++        err = "cuCtxPushCurrent failed";
++        return AJI_ERR_CUDA;
++    }
++
++    if (texs_.size() > 56) {
++        // A pool that keeps reallocating: start over once nothing is in
++        // flight (here, before this run holds any entry).
++        idle();
++        texs_.clear();
++    }
++
++    aji_frame cin[4], cout[4];
++    const aji_frame *pin[4] = {}, *pout[4] = {};
++    Tex *tin[4] = {}, *tout[4] = {};
++    Layout lin[4], lout[4];
++    auto prepare = [&](const aji_frame *f, int role, Tex **t, Layout &L, aji_frame &cf) -> int {
++        if (!f)
++            return AJI_ERR;
++        if (!open_tex(f->plane[0], t, err))
++            return AJI_ERR;
++        int e = layout_for(**t, *f, L, err);
++        if (e != AJI_OK)
++            return e;
++        if (!ensure_staging(role, L.total, err))
++            return AJI_ERR;
++        cf = *f;
++        cf.plane[0] = (void *)(staging_[role].ptr + L.fp[0].Offset);
++        cf.plane[1] = (void *)(staging_[role].ptr + L.fp[1].Offset);
++        cf.plane[2] = nullptr;
++        cf.stride[0] = (ptrdiff_t)L.fp[0].Footprint.RowPitch;
++        cf.stride[1] = (ptrdiff_t)L.fp[1].Footprint.RowPitch;
++        cf.stride[2] = 0;
++        return AJI_OK;
++    };
++    for (int i = 0; i < n_in; i++) {
++        int e = prepare(ins[i], i, &tin[i], lin[i], cin[i]);
++        if (e != AJI_OK)
++            return e;
++        pin[i] = &cin[i];
++    }
++    for (int i = 0; i < n_out; i++) {
++        int e = prepare(outs[i], 4 + i, &tout[i], lout[i], cout[i]);
++        if (e != AJI_OK)
++            return e;
++        pout[i] = &cout[i];
++    }
++
++    // D3D11 -> D3D12: the caller's queued work (its copy into the input
++    // texture) lands before our queue reads the frames.
++    ctx11_4_->Signal(fence11_.Get(), ++value_);
++    ctx11_->Flush();
++    queue_->Wait(fence12_.Get(), value_);
++    if (n_in) {
++        ID3D12GraphicsCommandList *l = begin_cmd(err);
++        if (!l)
++            return AJI_ERR;
++        for (int i = 0; i < n_in; i++) {
++            transition(l, *tin[i], lin[i], D3D12_RESOURCE_STATE_COMMON, D3D12_RESOURCE_STATE_COPY_SOURCE);
++            for (int p = 0; p < 2; p++) {
++                D3D12_TEXTURE_COPY_LOCATION dst = {}, src = {};
++                dst.pResource = staging_[i].buf.Get();
++                dst.Type = D3D12_TEXTURE_COPY_TYPE_PLACED_FOOTPRINT;
++                dst.PlacedFootprint = lin[i].fp[p];
++                src.pResource = tin[i]->r12.Get();
++                src.Type = D3D12_TEXTURE_COPY_TYPE_SUBRESOURCE_INDEX;
++                src.SubresourceIndex = lin[i].subres[p];
++                D3D12_BOX box = {0, 0, 0, lin[i].fp[p].Footprint.Width, lin[i].fp[p].Footprint.Height, 1};
++                l->CopyTextureRegion(&dst, 0, 0, 0, &src, &box);
++            }
++            transition(l, *tin[i], lin[i], D3D12_RESOURCE_STATE_COPY_SOURCE, D3D12_RESOURCE_STATE_COMMON);
++        }
++        if (!submit_cmd(err))
++            return AJI_ERR;
++    }
++
++    // D3D12 -> CUDA, the backend's work, CUDA -> D3D12.
++    CUDA_EXTERNAL_SEMAPHORE_WAIT_PARAMS wp = {};
++    wp.params.fence.value = value_;
++    CUresult r = cuWaitExternalSemaphoresAsync(&sem_, &wp, 1, stream_);
++    if (r != CUDA_SUCCESS) {
++        err = "CUDA wait on the D3D12 fence failed: " + cu_str(r);
++        return AJI_ERR_CUDA;
++    }
++    in_fn_ = true;
++    const int ret = fn(pin, pout, stream_);
++    in_fn_ = false;
++    CUDA_EXTERNAL_SEMAPHORE_SIGNAL_PARAMS sp = {};
++    sp.params.fence.value = ++value_;
++    r = cuSignalExternalSemaphoresAsync(&sem_, &sp, 1, stream_);
++    if (r != CUDA_SUCCESS) {
++        err = "CUDA signal of the D3D12 fence failed: " + cu_str(r);
++        --value_;
++        return AJI_ERR_CUDA;
++    }
++    queue_->Wait(fence12_.Get(), value_);
++
++    if (n_out && ret == AJI_OK) {
++        ID3D12GraphicsCommandList *l = begin_cmd(err);
++        if (!l)
++            return AJI_ERR;
++        for (int i = 0; i < n_out; i++) {
++            transition(l, *tout[i], lout[i], D3D12_RESOURCE_STATE_COMMON, D3D12_RESOURCE_STATE_COPY_DEST);
++            for (int p = 0; p < 2; p++) {
++                D3D12_TEXTURE_COPY_LOCATION dst = {}, src = {};
++                dst.pResource = tout[i]->r12.Get();
++                dst.Type = D3D12_TEXTURE_COPY_TYPE_SUBRESOURCE_INDEX;
++                dst.SubresourceIndex = lout[i].subres[p];
++                src.pResource = staging_[4 + i].buf.Get();
++                src.Type = D3D12_TEXTURE_COPY_TYPE_PLACED_FOOTPRINT;
++                src.PlacedFootprint = lout[i].fp[p];
++                l->CopyTextureRegion(&dst, 0, 0, 0, &src, nullptr);
++            }
++            transition(l, *tout[i], lout[i], D3D12_RESOURCE_STATE_COPY_DEST, D3D12_RESOURCE_STATE_COMMON);
++        }
++        if (!submit_cmd(err))
++            return AJI_ERR;
++    }
++
++    // D3D12 -> D3D11: the caller's next use of the output waits on the GPU.
++    ctx11_4_->Wait(fence11_.Get(), value_);
++    return ret;
++}
++
++int Impl::done(uint64_t ticket)
++{
++    if (ticket > value_)
++        return AJI_ERR;
++    return fence12_->GetCompletedValue() >= ticket ? 1 : 0;
++}
++
++int Impl::wait(uint64_t ticket)
++{
++    if (ticket > value_)
++        return AJI_ERR;
++    return wait_value(ticket, 10000) ? AJI_OK : AJI_ERR;
++}
++
++}  // namespace
++
++std::unique_ptr<Bridge> create(void *d3d11_device, std::string &err)
++{
++    if (!d3d11_device) {
++        err = "no D3D11 device";
++        return nullptr;
++    }
++    auto b = std::make_unique<Impl>();
++    if (!b->init(d3d11_device, err))
++        return nullptr;
++    return b;
++}
++
++}  // namespace ajid3d
++
++#endif  // _WIN32
+diff --git a/src/d3d11_bridge.h b/src/d3d11_bridge.h
+new file mode 100644
+index 0000000..7c09ac9
+--- /dev/null
++++ b/src/d3d11_bridge.h
+@@ -0,0 +1,70 @@
++// d3d11_bridge.h - D3D11 frames for the CUDA backends (aji_trt, aji_trtrtx).
++//
++// vf_animejanai hands D3D11 textures to whatever backend the conf names when
++// mpv decodes with d3d11va (the renderer is D3D11, for example so that the
++// output can feed mpv's d3d11vpp filter: NVIDIA RTX Video HDR / Super
++// Resolution). The CUDA backends work on CUdeviceptr planes, so this bridge
++// moves frames across:
++//
++//   D3D11 (caller's copy into its SHARED|NTHANDLE input texture)
++//     --fence--> D3D12 copy queue: texture planes -> linear shared buffers
++//     --fence--> CUDA: the unchanged backend code reads/writes those buffers
++//     --fence--> D3D12 copy queue: linear buffers -> output texture planes
++//     --fence--> D3D11 (the caller's next use waits on the GPU)
++//
++// One shared D3D12 fence carries the whole chain (opened in D3D11, imported in
++// CUDA as an external semaphore). D3D12 does the plane copies because CUDA's
++// external-memory arrays cannot map P010 textures (CUDA_ERROR_INVALID_VALUE)
++// and CUDA graphics interop rejects NTHANDLE-shared textures and only exposes
++// an NV12 texture's luma plane. Buffers -> CUDA is plain linear memory.
++//
++// All calls happen on the caller's thread (the filter's); everything is
++// enqueued, nothing waits on the CPU except ticket waits.
++#pragma once
++#ifdef _WIN32
++
++#include <cuda.h>
++#include <cstdint>
++#include <functional>
++#include <memory>
++#include <string>
++
++#include "aji.h"
++
++namespace ajid3d {
++
++class Bridge {
++public:
++    // fn gets CUDA views of the frames (same width/height/format/matrix/...,
++    // planes as CUdeviceptr with the staging pitch) and the stream to use.
++    using Fn = std::function<int(const aji_frame *const *ins,
++                                 const aji_frame *const *outs, CUstream)>;
++
++    virtual ~Bridge() = default;
++
++    // CUDA device on the same adapter as the D3D11 device.
++    virtual CUdevice cuda_device() const = 0;
++    // Second step of creation, with the backend's context current.
++    virtual bool attach(CUcontext ctx, std::string &err) = 0;
++
++    // Moves ins (read) and outs (written) across and runs fn in between.
++    // Returns fn's result, or an AJI_ERR* code with err set.
++    virtual int run(const aji_frame *const *ins, int n_in,
++                    const aji_frame *const *outs, int n_out,
++                    const Fn &fn, std::string &err) = 0;
++    // True while fn runs (the backend's own entry points then skip the bridge).
++    virtual bool busy() const = 0;
++    virtual CUstream stream() const = 0;
++
++    // Tickets: the fence value after everything enqueued so far.
++    virtual uint64_t flush() = 0;
++    virtual int done(uint64_t ticket) = 0;   // 1 done, 0 not yet, <0 error
++    virtual int wait(uint64_t ticket) = 0;   // AJI_OK or error
++};
++
++// d3d11_device: the caller's ID3D11Device*. Null with err on failure.
++std::unique_ptr<Bridge> create(void *d3d11_device, std::string &err);
++
++}  // namespace ajid3d
++
++#endif  // _WIN32

@@ -452,9 +452,9 @@
 
   // StremioZ: RTX Video settings
   const VIDEO_PIPELINES = [
-    { value: "auto", label: "Auto (RTX Video when the display is in HDR mode)" },
-    { value: "rtx", label: "RTX Video (D3D11, AnimeJaNai on DirectML)" },
-    { value: "native", label: "AnimeJaNai TensorRT (Vulkan, no RTX Video)" },
+    { value: "auto", label: "Auto (RTX Video on NVIDIA GPUs)" },
+    { value: "rtx", label: "RTX Video (D3D11)" },
+    { value: "native", label: "Vulkan (no RTX Video)" },
   ];
   function getVideoPipeline() {
     return localStorage.getItem(STORAGE_KEYS.videoPipeline) || "auto";
@@ -975,7 +975,7 @@
     pipelineDropdown.appendChild(
       createNote(
         "info",
-        "<strong>Note:</strong> RTX Video needs an NVIDIA RTX GPU. On it, AnimeJaNai runs on DirectML (about twice the GPU load of TensorRT; fine for 24&ndash;30 fps anime).",
+        "<strong>Note:</strong> RTX Video needs an NVIDIA RTX GPU. AnimeJaNai keeps running on TensorRT and feeds RTX Video HDR directly.",
       ),
     );
     const rtxHdrToggle = createToggleOption(

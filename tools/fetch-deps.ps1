@@ -119,6 +119,10 @@ if ($Force -or -not (Test-Path $ajnStamp) -or (Get-Content $ajnStamp) -ne $Comp.
     Write-Host "AnimeJaNai runtime ready: $ajnDir"
 } else { Write-Host 'AnimeJaNai runtime: up to date' }
 
+# ---------------------------------------------------------------- patched aji_trt
+# TensorRT on D3D11 frames (tools/build-libaji.ps1; downloads ~2.2 GB of SDKs once).
+& (Join-Path $PSScriptRoot 'build-libaji.ps1') -Force:$Force
+
 # ---------------------------------------------------------------- Stremio web UI
 # Built from source (pinned commit); without Node.js StremioZ falls back to the
 # hosted copy at runtime.

@@ -1,10 +1,13 @@
 --[[
   @name Profile Manager
   @description Hybrid profile system: static base profiles + dynamic layers
-  @version 8.1-stremioz
+  @version 8.2-stremioz
   @author allecsc (StremioZ changes marked "StremioZ")
 
   @changelog
+    v8.2-stremioz - TensorRT on D3D11 frames (StremioZ's patched aji_trt): the
+           RTX pipeline keeps the user's AnimeJaNai conf (no DirectML copy);
+           "auto" picks it whenever an NVIDIA GPU is present.
     v8.1-stremioz - NVIDIA RTX Video: per-session "rtx" pipeline (D3D11:
            AnimeJaNai on DirectML -> RTX Video HDR; live action -> RTX Video
            Super Resolution + HDR in one d3d11vpp pass) or "native" (AnimeJaNai
@@ -242,16 +245,16 @@ local try_execute_profile
 -- AnimeJaNai's TensorRT backend produces CUDA frames for a Vulkan renderer.
 -- The renderer's GPU API is fixed once mpv opens its video output, so the
 -- pipeline is chosen once per session, at the first file:
---   "rtx"    gpu-api=d3d11, hwdec=d3d11va; AnimeJaNai runs on DirectML (D3D11
---            frames) and can feed RTX Video HDR; live action gets RTX Video
---            Super Resolution (+ HDR) from one d3d11vpp pass.
+--   "rtx"    gpu-api=d3d11, hwdec=d3d11va; AnimeJaNai runs on D3D11 frames
+--            (TensorRT through StremioZ's patched aji_trt, or DirectML) and can
+--            feed RTX Video HDR; live action gets RTX Video Super Resolution
+--            (+ HDR) from one d3d11vpp pass.
 --   "native" whatever AnimeJaNai's backend chose (TensorRT: nvdec + Vulkan).
--- Setting "video_pipeline": "auto" (rtx when the window's display is in Windows
--- HDR mode), "rtx", or "native". It is persisted so the next session starts
--- with it even before Stremio's metadata arrives.
+-- Setting "video_pipeline": "auto" (rtx when an NVIDIA GPU is present), "rtx",
+-- or "native". It is persisted so the next session starts with it even before
+-- Stremio's metadata arrives.
 
 local PIPELINE_FILE = "~~/cache/stremioz-pipeline.txt"
-local AJN_DML_CONF = "~~/../animejanai/animejanai-stremioz-directml.conf"
 local session_pipeline = nil   -- "rtx" / "native", fixed at the first file
 
 local function expand(path)
@@ -287,24 +290,11 @@ local function persist_pipeline_setting(value)
     write_text(PIPELINE_FILE, value .. "\n")
 end
 
--- The user's animejanai.conf with backend=DirectML, so the Manager's custom
--- slots keep working on the RTX pipeline. Rewritten each session.
-local function ensure_dml_conf(source_conf)
-    local text = read_text(source_conf) or "[global]\n"
-    local out, in_global, done = {}, false, false
-    for line in (text .. "\n"):gmatch("(.-)\r?\n") do
-        local section = line:match("^%s*%[(.-)%]")
-        if section then
-            if in_global and not done then out[#out + 1] = "backend=DirectML"; done = true end
-            in_global = section:lower() == "global"
-        end
-        if in_global and line:lower():match("^%s*backend%s*=") then
-            line = "backend=DirectML"; done = true
-        end
-        out[#out + 1] = line
-    end
-    if not done then table.insert(out, 1, "[global]"); table.insert(out, 2, "backend=DirectML") end
-    write_text(AJN_DML_CONF, table.concat(out, "\n"))
+local function nvidia_gpu_present()
+    -- The shell publishes the NVIDIA GPU list for AnimeJaNai's scripts
+    -- (src/stremioz/animejanai_env.cpp).
+    local g = os.getenv("ANIMEJANAI_NVIDIA_GPUS")
+    return g ~= nil and g ~= ""
 end
 
 local function choose_pipeline(meta_setting)
@@ -314,7 +304,7 @@ local function choose_pipeline(meta_setting)
         setting = persisted and persisted:match("^%s*(%S+)") or "auto"
     end
     if setting == "rtx" or setting == "native" then return setting, setting end
-    return display_is_hdr() and "rtx" or "native", "auto"
+    return nvidia_gpu_present() and "rtx" or "native", "auto"
 end
 
 -- Called at the first start-file, before the video output exists.
@@ -326,8 +316,8 @@ local function lock_pipeline(meta_setting)
         mp.set_property("gpu-api", "d3d11")
         mp.set_property("hwdec", "d3d11va")
     end
-    log(string.format("Video pipeline: %s (setting %s, display HDR %s, gpu-api %s, hwdec %s)",
-        session_pipeline, setting, tostring(display_is_hdr()),
+    log(string.format("Video pipeline: %s (setting %s, NVIDIA GPU %s, display HDR %s, gpu-api %s, hwdec %s)",
+        session_pipeline, setting, tostring(nvidia_gpu_present()), tostring(display_is_hdr()),
         mp.get_property("gpu-api"), mp.get_property("hwdec")))
 end
 
@@ -439,9 +429,8 @@ end
 -- StremioZ: SVP sync policy removed along with SVP.
 
 -- StremioZ: insert AnimeJaNai with the chosen built-in slot. On the RTX
--- pipeline it runs on DirectML (D3D11 frames) with 4:2:x output, which the
--- D3D11 video processor accepts, optionally followed by RTX Video HDR.
-local dml_conf_ready = false
+-- pipeline it takes D3D11 frames and writes 4:2:0 output, which the D3D11
+-- video processor accepts, optionally followed by RTX Video HDR.
 local function apply_animejanai(slot, with_rtx_hdr)
     local vf = ajn_vf_string()
     if not vf then
@@ -450,13 +439,9 @@ local function apply_animejanai(slot, with_rtx_hdr)
     end
     vf = vf:gsub("slot=%d+", "slot=" .. slot)
     if session_pipeline == "rtx" then
-        if not dml_conf_ready then
-            ensure_dml_conf(vf:match("conf=([^:]+)") or "~~/../animejanai/animejanai.conf")
-            dml_conf_ready = true
-        end
-        vf = vf:gsub("conf=[^:]+", "conf=" .. AJN_DML_CONF) .. ":output-444=no"
+        vf = vf .. ":output-444=no"
     end
-    log("Appending VF: AnimeJaNai slot " .. slot .. (session_pipeline == "rtx" and " (DirectML)" or ""))
+    log("Appending VF: AnimeJaNai slot " .. slot .. (session_pipeline == "rtx" and " (D3D11 frames)" or ""))
     mp.commandv("vf", "append", vf)
     -- Not sending "script-message aji-slot": animejanai_slot.lua answers it
     -- with "seek 0 exact" while paused, which would drop Stremio's resume
