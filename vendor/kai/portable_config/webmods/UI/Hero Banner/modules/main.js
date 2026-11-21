@@ -174,6 +174,30 @@ window.HeroPlugin.Main = {
           HeroState.movieCatalogPreloaded = true;
         }
 
+        // StremioZ: a first "For You" build (fresh install, empty caches)
+        // takes longer than the 20 s above. When the same fetch finishes
+        // later, show its titles instead of the placeholders now, rather
+        // than on the next launch.
+        const catalogAtStart = HeroState.currentCatalog;
+        collectionPromise
+          .then((late) => {
+            if (!Array.isArray(late) || late.length === 0) return;
+            const showingFallback =
+              HeroState.heroTitles[0]?.id === HeroState.fallbackTitles[0]?.id;
+            if (catalogAtStart === "anime") {
+              HeroState.animeTitles = late;
+            } else {
+              HeroState.movieSeriesTitles = late;
+              Cache.saveMovieCache(late);
+            }
+            if (showingFallback && HeroState.currentCatalog === catalogAtStart) {
+              console.log(`[Hero Plugin] Late titles arrived (${late.length}), replacing the placeholders`);
+              HeroState.heroTitles = late;
+              UI.createHeroDirect();
+            }
+          })
+          .catch(() => {});
+
         return false;
       } finally {
         setTimeout(() => UI.hideBannerLoading(), 500);
