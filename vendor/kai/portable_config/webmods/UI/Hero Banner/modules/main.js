@@ -43,38 +43,54 @@ window.HeroPlugin.Main = {
       };
     }
 
+    // StremioZ: three catalogs ("modes"): Kai's movies/series sources and
+    // anime airing schedule, and For You from the user's watch history.
+    const CATALOGS = ["movies", "anime", "foryou"];
+    const CATALOG_NAMES = { movies: "Movies", anime: "Anime", foryou: "For You" };
+    const TITLES = { movies: "movieSeriesTitles", anime: "animeTitles", foryou: "forYouTitles" };
+    const PRELOADED = {
+      movies: "movieCatalogPreloaded",
+      anime: "animeCatalogPreloaded",
+      foryou: "forYouCatalogPreloaded",
+    };
+
+    function loadCached(catalog) {
+      if (catalog === "anime") return Cache.loadAnimeCache()?.titles || null;
+      if (catalog === "foryou") return Cache.loadForYouCache();
+      return Cache.loadMovieCache();
+    }
+
+    // The anime service saves its own cache (with its build state).
+    function saveCached(catalog, titles) {
+      if (catalog === "movies") Cache.saveMovieCache(titles);
+      else if (catalog === "foryou") Cache.saveForYouCache(titles);
+    }
+
+    function collect(catalog, progressCallback) {
+      if (catalog === "anime") return Service.getAnimeCatalog(20, progressCallback);
+      if (catalog === "foryou") return Service.getForYou(progressCallback);
+      return Service.getMoviesAndSeries(progressCallback);
+    }
+
+    function setTitles(catalog, titles) {
+      HeroState[TITLES[catalog]] = titles;
+      HeroState[PRELOADED[catalog]] = true;
+    }
+
     /**
      * Retrieves the title list for the currently active catalog.
      * Tries memory state first, then local storage cache, then fallback.
      * @returns {Array} List of hero titles
      */
     function getTitlesForCurrentCatalog() {
-      if (HeroState.currentCatalog === "anime") {
-        if (HeroState.animeTitles.length > 0) return HeroState.animeTitles;
-
-        const cachedAnimeStruct = Cache.loadAnimeCache();
-        if (
-          cachedAnimeStruct &&
-          cachedAnimeStruct.titles &&
-          cachedAnimeStruct.titles.length > 0
-        ) {
-          HeroState.animeTitles = cachedAnimeStruct.titles;
-          HeroState.animeCatalogPreloaded = true;
-          return HeroState.animeTitles;
-        }
-        return HeroState.fallbackTitles;
-      } else {
-        if (HeroState.movieSeriesTitles.length > 0)
-          return HeroState.movieSeriesTitles;
-
-        const cachedMovies = Cache.loadMovieCache();
-        if (cachedMovies && cachedMovies.length > 0) {
-          HeroState.movieSeriesTitles = cachedMovies;
-          HeroState.movieCatalogPreloaded = true;
-          return HeroState.movieSeriesTitles;
-        }
-        return HeroState.fallbackTitles;
+      const catalog = HeroState.currentCatalog;
+      if (HeroState[TITLES[catalog]].length > 0) return HeroState[TITLES[catalog]];
+      const cached = loadCached(catalog);
+      if (Array.isArray(cached) && cached.length > 0) {
+        setTitles(catalog, cached);
+        return cached;
       }
+      return HeroState.fallbackTitles;
     }
 
     // ==========================================
@@ -116,10 +132,9 @@ window.HeroPlugin.Main = {
 
       UI.createHeroDirect();
 
-      const catalogLabel =
-        HeroState.currentCatalog === "anime" ? "anime" : "movies";
+      const catalogAtStart = HeroState.currentCatalog;
       UI.showBannerLoading({
-        catalog: catalogLabel,
+        catalog: catalogAtStart,
         total: 20,
       });
 
@@ -135,10 +150,7 @@ window.HeroPlugin.Main = {
         });
       };
 
-      const collectionPromise =
-        HeroState.currentCatalog === "anime"
-          ? Service.getAnimeCatalog(20, progressCallback)
-          : Service.getMoviesAndSeries(progressCallback);
+      const collectionPromise = collect(catalogAtStart, progressCallback);
 
       try {
         const collectedTitles = await Promise.race([
@@ -148,15 +160,8 @@ window.HeroPlugin.Main = {
 
         if (collectedTitles && collectedTitles.length > 0) {
           HeroState.heroTitles = collectedTitles;
-
-          if (HeroState.currentCatalog === "anime") {
-            HeroState.animeTitles = collectedTitles;
-            HeroState.animeCatalogPreloaded = true;
-          } else {
-            HeroState.movieSeriesTitles = collectedTitles;
-            Cache.saveMovieCache(collectedTitles);
-            HeroState.movieCatalogPreloaded = true;
-          }
+          setTitles(catalogAtStart, collectedTitles);
+          saveCached(catalogAtStart, collectedTitles);
 
           setTimeout(preLoadCatalogs, 100);
           return true;
@@ -166,30 +171,19 @@ window.HeroPlugin.Main = {
       } catch (error) {
         console.warn("[Hero Plugin] Fetch failed, using fallback:", error);
         HeroState.heroTitles = [...HeroState.fallbackTitles];
-        if (HeroState.currentCatalog === "anime") {
-          HeroState.animeTitles = [...HeroState.fallbackTitles];
-          HeroState.animeCatalogPreloaded = true;
-        } else {
-          HeroState.movieSeriesTitles = [...HeroState.fallbackTitles];
-          HeroState.movieCatalogPreloaded = true;
-        }
+        setTitles(catalogAtStart, [...HeroState.fallbackTitles]);
 
         // StremioZ: a first "For You" build (fresh install, empty caches)
         // takes longer than the 20 s above. When the same fetch finishes
         // later, show its titles instead of the placeholders now, rather
         // than on the next launch.
-        const catalogAtStart = HeroState.currentCatalog;
         collectionPromise
           .then((late) => {
             if (!Array.isArray(late) || late.length === 0) return;
             const showingFallback =
               HeroState.heroTitles[0]?.id === HeroState.fallbackTitles[0]?.id;
-            if (catalogAtStart === "anime") {
-              HeroState.animeTitles = late;
-            } else {
-              HeroState.movieSeriesTitles = late;
-              Cache.saveMovieCache(late);
-            }
+            setTitles(catalogAtStart, late);
+            saveCached(catalogAtStart, late);
             if (showingFallback && HeroState.currentCatalog === catalogAtStart) {
               console.log(`[Hero Plugin] Late titles arrived (${late.length}), replacing the placeholders`);
               HeroState.heroTitles = late;
@@ -328,6 +322,18 @@ window.HeroPlugin.Main = {
             );
           }
 
+          // StremioZ: For You (hero-for-you.js keeps its picks for 12 h
+          // and rebuilds sooner when the most-watched titles change).
+          try {
+            const forYou = await Service.getForYou();
+            if (forYou.length > 0) {
+              Cache.saveForYouCache(forYou);
+              HeroState.forYouTitles = forYou;
+            }
+          } catch (e) {
+            console.warn("[Hero Plugin] Background For You refresh failed:", e);
+          }
+
           console.log(
             "[Hero Plugin] Background refresh complete. New content will be visible on next app launch."
           );
@@ -340,44 +346,27 @@ window.HeroPlugin.Main = {
     }
 
     /**
-     * Pre-loads bothcatalogs in background for instant switching.
+     * Pre-loads the catalogs in background for instant switching.
+     * StremioZ: all three, one after another.
      */
     async function preLoadCatalogs() {
       console.log("[Hero Plugin] Pre-loading catalogs...");
 
-      if (!HeroState.movieCatalogPreloaded) {
+      for (const catalog of CATALOGS) {
+        if (HeroState[PRELOADED[catalog]]) continue;
         try {
-          const cachedMovies = Cache.loadMovieCache();
-          if (cachedMovies?.length > 0) {
-            HeroState.movieSeriesTitles = cachedMovies;
-            HeroState.movieCatalogPreloaded = true;
-          } else {
-            const movies = await Service.getMoviesAndSeries();
-            if (movies.length > 0) {
-              HeroState.movieSeriesTitles = movies;
-              Cache.saveMovieCache(movies);
-              HeroState.movieCatalogPreloaded = true;
-            }
+          const cached = loadCached(catalog);
+          if (Array.isArray(cached) && cached.length > 0) {
+            setTitles(catalog, cached);
+            continue;
+          }
+          const titles = await collect(catalog);
+          if (titles.length > 0) {
+            setTitles(catalog, titles);
+            saveCached(catalog, titles);
           }
         } catch (e) {
-          console.warn("Pre-load movies failed", e);
-        }
-      }
-      if (!HeroState.animeCatalogPreloaded) {
-        try {
-          const cachedAnimeStruct = Cache.loadAnimeCache();
-          if (cachedAnimeStruct?.titles?.length > 0) {
-            HeroState.animeTitles = cachedAnimeStruct.titles;
-            HeroState.animeCatalogPreloaded = true;
-          } else {
-            const anime = await Service.getAnimeCatalog(20);
-            if (anime.length > 0) {
-              HeroState.animeTitles = anime;
-              HeroState.animeCatalogPreloaded = true;
-            }
-          }
-        } catch (e) {
-          console.warn("Pre-load anime failed", e);
+          console.warn(`Pre-load ${catalog} failed`, e);
         }
       }
     }
@@ -452,14 +441,15 @@ window.HeroPlugin.Main = {
         HeroState.heroTitles = [...HeroState.fallbackTitles];
         UI.createHeroDirect();
       },
-      toggleCatalog: async () => {
-        // Switch target
-        const targetCatalog =
-          HeroState.currentCatalog === "movies" ? "anime" : "movies";
+      // StremioZ: Movies -> Anime -> For You. A catalog name picks it directly.
+      toggleCatalog: async (target) => {
+        const targetCatalog = CATALOGS.includes(target)
+          ? target
+          : CATALOGS[(CATALOGS.indexOf(HeroState.currentCatalog) + 1) % CATALOGS.length];
 
         // Check if ready / Demand Load
-        if (targetCatalog === "anime" && !HeroState.animeCatalogPreloaded) {
-          UI.showBannerLoading({ catalog: "anime", total: 20 });
+        if (!HeroState[PRELOADED[targetCatalog]] && !(loadCached(targetCatalog)?.length > 0)) {
+          UI.showBannerLoading({ catalog: targetCatalog, total: 20 });
 
           // Progress callback for on-demand loading
           const onDemandCallback = (msg, progress, current, title) => {
@@ -471,13 +461,13 @@ window.HeroPlugin.Main = {
           };
 
           try {
-            const anime = await Service.getAnimeCatalog(20, onDemandCallback);
-            if (anime.length > 0) {
-              HeroState.animeTitles = anime;
-              HeroState.animeCatalogPreloaded = true;
+            const titles = await collect(targetCatalog, onDemandCallback);
+            if (titles.length > 0) {
+              setTitles(targetCatalog, titles);
+              saveCached(targetCatalog, titles);
             }
           } catch (e) {
-            console.error("Failed to load anime catalog on demand:", e);
+            console.error(`Failed to load ${targetCatalog} catalog on demand:`, e);
           }
           UI.hideBannerLoading();
         }
@@ -490,6 +480,7 @@ window.HeroPlugin.Main = {
 
         // UI Update
         UI.injectCatalogToggle();
+        UI.showCatalogName?.(CATALOG_NAMES[targetCatalog]);
 
         // Persistence
         localStorage.setItem(
@@ -501,6 +492,7 @@ window.HeroPlugin.Main = {
         HeroState.currentIndex = 0;
         UI.updateHeroContent(HeroState.heroTitles[HeroState.currentIndex]);
         UI.updateIndicators();
+        resetAutoRotate();
       },
     });
 
@@ -596,6 +588,13 @@ window.HeroPlugin.Main = {
 
     window.addEventListener("beforeunload", cleanupOnUnload);
     window.addEventListener("pagehide", cleanupOnUnload);
+
+    // StremioZ: Settings > StremioZ > For You "Refresh now".
+    window.HeroPlugin.Main.forgetForYou = () => {
+      Cache.clearForYouCache();
+      HeroState.forYouTitles = [];
+      HeroState.forYouCatalogPreloaded = false;
+    };
 
     // Execute Init
     UI.disconnectHeroObserver();

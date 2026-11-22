@@ -258,12 +258,13 @@ class CatalogEnrichmentService {
    * @param {Function} [progressCallback] - Optional callback for UI progress updates
    * @returns {Promise<Array>} Combined enriched sorted list
    */
-  async getMoviesAndSeries(progressCallback) {
+  async getMoviesAndSeries(progressCallback, urls = null) {
     await this.waitForMetadata();
 
     // 1. Determine Limits based on Configuration
-    const movieUrl = this.config.MOVIE_CATALOG_URL;
-    const seriesUrl = this.config.SERIES_CATALOG_URL;
+    // StremioZ: "urls" ({movie, series}) overrides the configured sources (For You).
+    const movieUrl = urls ? urls.movie : this.config.MOVIE_CATALOG_URL;
+    const seriesUrl = urls ? urls.series : this.config.SERIES_CATALOG_URL;
 
     let movieLimit = 0;
     let seriesLimit = 0;
@@ -294,11 +295,11 @@ class CatalogEnrichmentService {
       // 2. Fetch RAW buffers concurrently (only for active types)
       const promises = [];
       if (movieLimit > 0)
-        promises.push(this.fetchCatalog("movie", BUFFER_SIZE));
+        promises.push(this.fetchCatalog("movie", BUFFER_SIZE, movieUrl));
       else promises.push(Promise.resolve([]));
 
       if (seriesLimit > 0)
-        promises.push(this.fetchCatalog("series", BUFFER_SIZE));
+        promises.push(this.fetchCatalog("series", BUFFER_SIZE, seriesUrl));
       else promises.push(Promise.resolve([]));
 
       const [rawMovies, rawSeries] = await Promise.all(promises);
@@ -368,6 +369,15 @@ class CatalogEnrichmentService {
       console.error("[CatalogService] Error getting Movies/Series:", error);
       return [];
     }
+  }
+
+  /**
+   * StremioZ: the "For You" mode, movies and series picked from the user's
+   * watch history (webmods/StremioZ/hero-for-you.js).
+   */
+  async getForYou(progressCallback) {
+    const url = this.config.FORYOU_URL;
+    return this.getMoviesAndSeries(progressCallback, { movie: url, series: url });
   }
 
   /**
@@ -745,12 +755,13 @@ class CatalogEnrichmentService {
   /**
    * Fetches top movies/series from Cinemeta
    */
-  async fetchCatalog(type = "movie", limit = 20) {
+  async fetchCatalog(type = "movie", limit = 20, urlOverride = null) {
     // Use EXACT URLs from Config
     const url =
-      type === "series"
+      urlOverride ||
+      (type === "series"
         ? this.config.SERIES_CATALOG_URL
-        : this.config.MOVIE_CATALOG_URL;
+        : this.config.MOVIE_CATALOG_URL);
 
     if (!url) {
       console.error(

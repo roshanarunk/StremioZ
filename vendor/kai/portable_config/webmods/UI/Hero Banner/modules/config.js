@@ -10,6 +10,9 @@ window.HeroPlugin.Config = {
   ROTATION_INTERVAL: 8000,
   ANIME_CACHE_KEY: "heroAnimeTitlesCache",
   MOVIE_CACHE_KEY: "heroMovieTitlesCache",
+  // StremioZ: the "For You" mode (webmods/StremioZ/hero-for-you.js)
+  FORYOU_CACHE_KEY: "heroForYouTitlesCache",
+  FORYOU_URL: "stremioz:for-you",
   CATALOG_PERSIST_KEY: "heroCatalogPreference",
   CUSTOM_MOVIE_URL_KEY: "heroCustomMovieUrl",
   CUSTOM_SERIES_URL_KEY: "heroCustomSeriesUrl",
@@ -28,9 +31,6 @@ window.HeroPlugin.Config = {
   SOURCES: {
     MOVIES: [
       { name: "None", url: "" },
-      // StremioZ: built from the user's watch history
-      // (webmods/StremioZ/hero-for-you.js). Index 1 = Kai's default choice.
-      { name: "For You", url: "stremioz:for-you" },
       {
         name: "Snoak's Latest Digital Releases",
         url: "https://mdblist.com/lists/snoak/latest-movies-digital-release/json",
@@ -51,9 +51,6 @@ window.HeroPlugin.Config = {
     ],
     SERIES: [
       { name: "None", url: "" },
-      // StremioZ: built from the user's watch history
-      // (webmods/StremioZ/hero-for-you.js). Index 1 = Kai's default choice.
-      { name: "For You", url: "stremioz:for-you" },
       {
         name: "Snoak's Trakt Trending",
         url: "https://mdblist.com/lists/snoak/trakt-s-trending-shows/json",

@@ -188,17 +188,24 @@ The interface size applies in fullscreen only. Auto lays the interface out at ab
 
 ## Hero banner: For You
 
-The hero banner on the home screen defaults to **For You** (Settings → Hero Banner source, for movies and for series), built from your own watch history by `overlay/portable_config/webmods/StremioZ/hero-for-you.js`. It needs no API keys:
+The hero banner on the home screen has three modes, switched with the arrows button at the top right (Movies → Anime → For You; the banner names the new mode for a moment):
+- **Movies**: Kai's movie and series sources (Settings → Hero Banner: Movie Catalog, Series Catalog);
+- **Anime**: Kai's anime airing schedule (Jikan);
+- **For You**, the default: built from your own watch history by `overlay/portable_config/webmods/StremioZ/hero-for-you.js`.
+
+The mode is remembered. Before 0.9.3, For You was the first entry of the Movie and Series source lists; on the first start of 0.9.3, `hero-for-you.js` moves saved source choices back to Kai's lists, and whoever was seeing For You keeps it (with its cached titles) as the For You mode.
+
+For You needs no API keys:
 
 1. **Seeds.** The 20 titles from your library and history (`library`, `library_recent`) that matter most. Recent and much-watched titles weigh more, and debrid, YouTube and other add-on entries are skipped.
 2. **Anime seeds** are matched to AniList through arm.haglund.dev, the same service Kai uses. One AniList query fetches the community recommendations for all of them, and each candidate scores by votes times the weight of the seeds recommending it. Results map back to IMDb IDs (the hero's artwork needs them). Shows you've already watched, and other seasons of them, are dropped.
 3. **Other series and movies** contribute their genres, and Cinemeta's popular titles in your top three genres fill in, in proportion to how much of your watching isn't anime.
 
-The list is cached for 12 hours, or until the set of your top titles changes. The ID mappings are kept for 30 days, so after the first build (about 35 s, in the background) a rebuild takes a fraction of a second. The other sources (trending lists, Cinemeta, Custom) are still in the dropdown, and Kai's anime airing-schedule mode is unchanged.
+The list is cached for 12 hours, or until the set of your top titles changes. The ID mappings are kept for 30 days, so after the first build (about 35 s, in the background) a rebuild takes a fraction of a second. **Settings → StremioZ → For You → Refresh now** drops the picks; the banner builds them again the next time it shows For You.
 
 ## Motion smoothing (RIFE)
 
-**Settings → Player → Motion Smoothing (RIFE)**, off by default. It's AnimeJaNai's RIFE frame interpolation (model v4.26, the AnimeJaNai Manager's default), and runs on anime that AnimeJaNai upscales. It takes the video to the display's refresh rate, at most 60 fps: 23.976 fps on a 60 Hz screen is interpolated 5/2 to 59.94 fps. A video already near that rate (50/60 fps) is left alone. RIFE runs before the upscale, at the source resolution.
+**Settings → Player → Motion Smoothing (RIFE)**, off by default. While watching: the motion smoothing button in the player's control bar (left of the speed button), Ctrl+M, or the controller's player menu. The button is lit while RIFE runs, and dimmed when smoothing is on but this video doesn't get it (not anime upscaled by AnimeJaNai, or already at the display rate); `profile-manager.lua` publishes that as `user-data/stremioz/motion-state` (`on`, `wanted`, `off`) for `webmods/StremioZ/player-controls.js`. It's AnimeJaNai's RIFE frame interpolation (model v4.26, the AnimeJaNai Manager's default), and runs on anime that AnimeJaNai upscales. It takes the video to the display's refresh rate, at most 60 fps: 23.976 fps on a 60 Hz screen is interpolated 5/2 to 59.94 fps. A video already near that rate (50/60 fps) is left alone. RIFE runs before the upscale, at the source resolution.
 
 libaji reads RIFE only from a profile's chains in `animejanai.conf`, so with smoothing on, `profile-manager.lua` writes `animejanai/stremioz-motion.conf` for each video and gives the AnimeJaNai filter that file instead. It holds:
 - the user's `animejanai.conf`;
@@ -207,6 +214,10 @@ libaji reads RIFE only from a profile's chains in `animejanai.conf`, so with smo
 The model ships in the package (`animejanai/rife`, 11 MB, MIT: `licenses/RIFE.txt`). `tools/fetch-deps.ps1` takes it from the-database's `models-rife-fp16-2` release (`tools/components.json`).
 
 Measured on an RTX 5070 Ti (RTX Video pipeline, Windows HDR off): 1080p 23.976 fps → RIFE 5/2 → AnimeJaNai to 4K at a steady 59.94 fps, no dropped frames after the first second, about 72% GPU. Not yet measured together with RTX Video HDR.
+
+## Playback speed
+
+Stremio's shell player starts every video at 1×. StremioZ starts it at the speed you last chose instead (from Stremio's speed menu, the controller's LB/RB or player menu, or mpv's keys): **Settings → StremioZ → Playback → Remember playback speed**, on by default. `webmods/StremioZ/player-controls.js` saves the speed as you change it (`stremioz-speed`), and replaces the speed Stremio sends when the player opens and right after each `loadfile`.
 
 ## Keys in the player
 

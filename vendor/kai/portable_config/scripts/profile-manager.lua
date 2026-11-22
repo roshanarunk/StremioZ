@@ -1,10 +1,12 @@
 --[[
   @name Profile Manager
   @description Hybrid profile system: static base profiles + dynamic layers
-  @version 8.5-stremioz
+  @version 8.6-stremioz
   @author allecsc (StremioZ changes marked "StremioZ")
 
   @changelog
+    v8.6-stremioz - Publishes user-data/stremioz/motion-state ("on", "wanted"
+           or "off") for the player's motion smoothing button.
     v8.5-stremioz - Motion smoothing: RIFE frame interpolation in the AnimeJaNai
            chain, to the display's refresh rate (at most 60 fps), through a conf
            written per video (animejanai/stremioz-motion.conf). Setting
@@ -509,6 +511,10 @@ end
 -- StremioZ: tell the web UI about a manual choice so it becomes the default.
 -- The counter makes every choice a property change, even a repeated one.
 local choice_counter = 0
+local function publish_motion_state(value)
+    mp.set_property_native("user-data/stremioz/motion-state", value)
+end
+
 local function publish_choice(name, value)
     choice_counter = choice_counter + 1
     mp.set_property_native("user-data/stremioz/" .. name, value .. "#" .. choice_counter)
@@ -1086,6 +1092,7 @@ function try_execute_profile()
 
     apply_visual_settings(color_profile, icc_profile_enabled, is_passthrough_active or use_rtx_hdr, false)
 
+    local motion_running = false
     if is_anime then
         if upscaler.kind == "ajn" then
             -- Legacy interlaced SD: GPU deinterlacing keeps frames on the GPU.
@@ -1093,7 +1100,7 @@ function try_execute_profile()
             local ok, motion_label = apply_animejanai(upscaler.slot, use_rtx_hdr, motion_wanted(meta))
             if ok then
                 state.ajn_active = true
-                if motion_label then table.insert(osd_parts, motion_label) end
+                if motion_label then table.insert(osd_parts, motion_label); motion_running = true end
                 if use_rtx_hdr then table.insert(osd_parts, "RTX HDR") end
             else
                 apply_anime_shaders("optimized", is_legacy_anime, is_hdr and hdr_passthrough)
@@ -1109,6 +1116,11 @@ function try_execute_profile()
     elseif use_rtx_vsr or use_rtx_hdr then
         for _, l in ipairs(apply_rtx_video(height, use_rtx_vsr, use_rtx_hdr)) do table.insert(osd_parts, l) end
     end
+
+    -- StremioZ: for the player's motion smoothing button. "on" = RIFE runs,
+    -- "wanted" = on, but this video doesn't get it (not anime / AnimeJaNai,
+    -- or already at the display rate), "off".
+    publish_motion_state(motion_running and "on" or (motion_wanted(meta) and "wanted" or "off"))
 
     audio_state.mode = meta.audio_preset or "off"
     apply_audio_current()

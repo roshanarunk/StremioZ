@@ -126,6 +126,25 @@ class CacheManager {
         return this.load(C.MOVIE_CACHE_KEY, C.GLOBAL_CACHE_TIMESTAMP_KEY);
     }
 
+    /** StremioZ: saves the For You titles to cache. */
+    saveForYouCache(titles) {
+        const C = window.HeroPlugin.Config;
+        return this.save(C.FORYOU_CACHE_KEY, C.GLOBAL_CACHE_TIMESTAMP_KEY, titles);
+    }
+
+    /** StremioZ: loads the For You titles from cache. */
+    loadForYouCache() {
+        const C = window.HeroPlugin.Config;
+        return this.load(C.FORYOU_CACHE_KEY, C.GLOBAL_CACHE_TIMESTAMP_KEY);
+    }
+
+    /** StremioZ: forgets the For You titles (Settings > StremioZ > Refresh now). */
+    clearForYouCache() {
+        const C = window.HeroPlugin.Config;
+        this.memoryCache.delete(C.FORYOU_CACHE_KEY);
+        try { localStorage.removeItem(C.FORYOU_CACHE_KEY); } catch (e) {}
+    }
+
     /** Saves anime catalog to cache. */
     saveAnimeCache(data) {
         const C = window.HeroPlugin.Config;

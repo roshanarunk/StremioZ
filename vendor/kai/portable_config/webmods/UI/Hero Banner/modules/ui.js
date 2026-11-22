@@ -608,7 +608,7 @@ window.HeroPlugin.UI = {
   /**
    * Show in-banner loading state with detailed progress
    * @param {Object} options - Loading options
-   * @param {string} options.catalog - 'movies' or 'anime'
+   * @param {string} options.catalog - 'movies', 'anime' or 'foryou'
    * @param {string} options.currentTitle - Currently processing title name
    * @param {number} options.current - Current index (0-based)
    * @param {number} options.total - Total count
@@ -627,7 +627,11 @@ window.HeroPlugin.UI = {
     let bannerLoader = heroContainer.querySelector(".hero-banner-loader");
     if (!bannerLoader) {
       const catalogLabel =
-        catalog === "anime" ? "Anime Catalog" : "Movie Catalog";
+        catalog === "anime"
+          ? "Anime Catalog"
+          : catalog === "foryou"
+            ? "For You"
+            : "Movie Catalog";
       const titleText = currentTitle
         ? `Processing: ${currentTitle}`
         : "Initializing...";
@@ -943,10 +947,30 @@ window.HeroPlugin.UI = {
     }
 
     // Update tooltip to reflect what the button will switch TO
-    toggleBtn.title =
-      HeroState.currentCatalog === "movies"
-        ? "Switch to Anime"
-        : "Switch to Movies";
+    // StremioZ: Movies -> Anime -> For You
+    const names = { movies: "Movies", anime: "Anime", foryou: "For You" };
+    const next = { movies: "anime", anime: "foryou", foryou: "movies" };
+    const current = HeroState.currentCatalog;
+    toggleBtn.title = `Banner: ${names[current] || "Movies"}. Switch to ${names[next[current]] || "Movies"}`;
+  },
+
+  /**
+   * StremioZ: names the banner's new mode for a moment after a switch.
+   * @param {string} name - "Movies", "Anime" or "For You"
+   */
+  showCatalogName(name) {
+    const hero = document.querySelector(".hero-container");
+    if (!hero || !name) return;
+    let badge = hero.querySelector(".hero-mode-badge");
+    if (!badge) {
+      badge = document.createElement("div");
+      badge.className = "hero-mode-badge";
+      hero.appendChild(badge);
+    }
+    badge.textContent = name;
+    badge.classList.add("visible");
+    clearTimeout(this._modeBadgeTimer);
+    this._modeBadgeTimer = setTimeout(() => badge.classList.remove("visible"), 1800);
   },
 
   async addHeroDiv() {

@@ -252,6 +252,7 @@
     update:
       '<svg class="icon-REQkK" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 12a9 9 0 1 1-3-6.7L21 8"/><path d="M21 3v5h-5"/></svg>',
     info: '<svg class="icon-REQkK" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><circle cx="12" cy="12" r="9"/><path d="M12 16v-5M12 8h.01"/></svg>',
+    play: '<svg class="icon-REQkK" viewBox="0 0 24 24" fill="currentColor"><path d="M7 4.5v15a1 1 0 0 0 1.5.86l12.5-7.5a1 1 0 0 0 0-1.72L8.5 3.64A1 1 0 0 0 7 4.5z"/></svg>',
     star: '<svg class="icon-REQkK" viewBox="0 0 24 24" fill="currentColor"><path d="m12 2 3.1 6.3 6.9 1-5 4.9 1.2 6.8L12 17.8 5.8 21l1.2-6.8-5-4.9 6.9-1z"/></svg>',
   };
 
@@ -261,15 +262,15 @@
     for (const s of syncers) s.szsSync?.();
   }
 
+  // The For You picks and the hero banner's copy of them. The next time the
+  // banner shows For You, it builds them again.
   function clearForYou() {
-    const keys = [];
-    for (let i = 0; i < localStorage.length; i++) {
-      const k = localStorage.key(i);
-      if (k && (k === "stremioz-for-you" || k.startsWith("hero") || k.includes("heroMovieTitles") || k.includes("heroGlobal")))
-        keys.push(k);
+    for (const k of ["stremioz-for-you", "heroForYouTitlesCache"]) {
+      try {
+        localStorage.removeItem(k);
+      } catch (e) {}
     }
-    // Keep the source choices (hero-*-source-index): only the cached picks go.
-    for (const k of keys) if (!/source-index/.test(k)) localStorage.removeItem(k);
+    window.HeroPlugin?.Main?.forgetForYou?.();
   }
 
   function build() {
@@ -331,12 +332,28 @@
       ),
     );
 
+    // Playback
+    add(category("Playback", ICON.play));
+    add(
+      toggle(
+        "Remember playback speed",
+        "Videos start at the speed you last chose, instead of 1×.",
+        () => ls.bool("stremioz-remember-speed", true),
+        (v) => ls.set("stremioz-remember-speed", v),
+      ),
+    );
+    add(
+      note(
+        'Anime upscaling (AnimeJaNai), motion smoothing (RIFE), RTX Video HDR and Super Resolution are in the <b>Player</b> section. Choices made while watching (the motion smoothing button in the player, the controller menu, Shift+1/2/3, Ctrl+M, Ctrl+H) become the defaults there.',
+      ),
+    );
+
     // For You
     add(category("Recommendations", ICON.star));
     add(
       action(
         "For You",
-        "The home banner's For You picks come from your watch history (AniList recommendations for anime, Cinemeta genres for the rest). They refresh every 12 hours.",
+        "The home banner's For You mode picks from your watch history (AniList recommendations for anime, Cinemeta genres for the rest). The picks refresh every 12 hours.",
         "Refresh now",
         (text) => {
           clearForYou();
@@ -345,12 +362,6 @@
         },
       ),
     );
-    add(
-      note(
-        'Anime upscaling (AnimeJaNai), RTX Video HDR and Super Resolution are in the <b>Player</b> section. Choices made while watching (controller menu, Shift+1/2/3, Ctrl+H) become the defaults there.',
-      ),
-    );
-
     // Updates
     add(category("Updates", ICON.update));
     add(

@@ -759,3 +759,27 @@ span.play-icon {
     gap: 15px !important;
     width: 100% !important;
 }
+
+/* StremioZ: the banner's mode (Movies / Anime / For You) after a switch */
+.hero-mode-badge {
+  position: absolute;
+  top: calc(var(--horizontal-nav-bar-size, 5rem) + 1rem);
+  left: 50%;
+  transform: translate(-50%, -0.5rem);
+  z-index: 20;
+  padding: 0.45rem 1.1rem;
+  border-radius: 999px;
+  background: rgba(15, 13, 25, 0.75);
+  backdrop-filter: blur(8px);
+  color: #fff;
+  font-size: 1rem;
+  font-weight: 600;
+  letter-spacing: 0.02em;
+  opacity: 0;
+  pointer-events: none;
+  transition: opacity 0.25s ease, transform 0.25s ease;
+}
+.hero-mode-badge.visible {
+  opacity: 1;
+  transform: translate(-50%, 0);
+}

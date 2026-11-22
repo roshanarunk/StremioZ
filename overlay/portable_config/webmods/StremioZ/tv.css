@@ -266,3 +266,20 @@ body.szt-tv .szt-hints:not(:empty) {
 .szs-link.szt-focus {
   text-decoration: underline;
 }
+
+/* Player: motion smoothing button (player-controls.js). Stremio's icon rule
+   sets the colour on the svg, so the states do too. */
+.szp-motion svg {
+  fill: none !important;
+  stroke: currentColor;
+}
+.szp-motion.szp-on svg,
+.szp-motion.szp-wanted svg {
+  color: #b9a6ff !important;
+}
+.szp-motion.szp-on svg {
+  filter: drop-shadow(0 0 4px rgba(123, 91, 245, 0.8));
+}
+.szp-motion.szp-wanted svg {
+  opacity: 0.55;
+}

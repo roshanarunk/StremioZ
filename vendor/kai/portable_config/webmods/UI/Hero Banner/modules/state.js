@@ -1,10 +1,11 @@
 // Ensure namespace exists
 window.HeroPlugin = window.HeroPlugin || {};
 
-// Load saved catalog preference or default to movies
+// Load saved catalog preference or default to For You (StremioZ)
 // Note: We can't access Config here safely if it's not loaded yet, so we hardcode the key or check existence
 const CATALOG_PERSIST_KEY = 'heroCatalogPreference'; 
-let savedCatalog = localStorage.getItem(CATALOG_PERSIST_KEY) || 'movies';
+let savedCatalog = localStorage.getItem(CATALOG_PERSIST_KEY) || 'foryou';
+if (!['movies', 'anime', 'foryou'].includes(savedCatalog)) savedCatalog = 'foryou';
 console.log(`[Hero Plugin] Loaded saved catalog preference: ${savedCatalog}`);
 
 /**
@@ -21,13 +22,15 @@ window.HeroPlugin.State = {
     heroBannerPaused: false,
     
     // Catalog switching state variables
-    currentCatalog: savedCatalog, // 'movies' or 'anime'
+    currentCatalog: savedCatalog, // 'movies', 'anime' or 'foryou' (StremioZ)
     movieSeriesTitles: [],
     animeTitles: [],
+    forYouTitles: [],
     
     // Background preloading flags
     movieCatalogPreloaded: false,
     animeCatalogPreloaded: false,
+    forYouCatalogPreloaded: false,
 
     // Initialization state
     isInitializing: false,

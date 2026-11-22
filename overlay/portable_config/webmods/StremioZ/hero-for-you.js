@@ -278,13 +278,40 @@
     return pending;
   }
 
-  // Once: drop the hero's cached titles so it rebuilds from "For You" now
-  // instead of showing the old trending list until its hourly refresh. (This
-  // runs before Kai's hero modules: webmods load in path order.)
+  // Runs before Kai's hero modules (webmods load in path order).
   try {
+    // 0.9.0: drop the hero's cached titles once, so it rebuilt from For You
+    // at once instead of showing the old trending list until its refresh.
     if (!localStorage.getItem("stremioz-for-you-v1")) {
       ["heroMovieTitlesCache", "heroGlobalTimestamp"].forEach((k) => localStorage.removeItem(k));
       localStorage.setItem("stremioz-for-you-v1", "1");
+    }
+    // 0.9.3: For You became the banner's third mode (Movies, Anime, For You)
+    // instead of the first entry of the Movie and Series source lists. Shift
+    // the saved source choices back to Kai's lists, and keep showing For You
+    // (with its cached titles) to whoever saw it in the Movies mode.
+    if (!localStorage.getItem("heroSourcesStremioZ")) {
+      const wasForYou = (key) => {
+        const v = localStorage.getItem(key);
+        if (v === null) return true; // the default was For You
+        const n = parseInt(v, 10);
+        if (n === 1) {
+          localStorage.removeItem(key);
+          return true;
+        }
+        if (n > 1) localStorage.setItem(key, String(n - 1));
+        return false;
+      };
+      const movieWasForYou = wasForYou("hero-movie-source-index");
+      const seriesWasForYou = wasForYou("hero-series-source-index");
+      const mode = localStorage.getItem("heroCatalogPreference");
+      if ((movieWasForYou || seriesWasForYou) && (mode === null || mode === "movies")) {
+        const titles = localStorage.getItem("heroMovieTitlesCache");
+        if (titles) localStorage.setItem("heroForYouTitlesCache", titles);
+        localStorage.removeItem("heroMovieTitlesCache");
+        localStorage.setItem("heroCatalogPreference", "foryou");
+      }
+      localStorage.setItem("heroSourcesStremioZ", "2");
     }
   } catch (e) {}
 
