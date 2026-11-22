@@ -1,10 +1,15 @@
 --[[
   @name Profile Manager
   @description Hybrid profile system: static base profiles + dynamic layers
-  @version 8.4-stremioz
+  @version 8.5-stremioz
   @author allecsc (StremioZ changes marked "StremioZ")
 
   @changelog
+    v8.5-stremioz - Motion smoothing: RIFE frame interpolation in the AnimeJaNai
+           chain, to the display's refresh rate (at most 60 fps), through a conf
+           written per video (animejanai/stremioz-motion.conf). Setting
+           "motion_smoothing"; "stremioz-set-motion yes|no|toggle" for the
+           current video, published as user-data/stremioz/motion-choice.
     v8.4-stremioz - "stremioz-set-rtx-hdr yes|no|toggle" switches RTX Video HDR
            for the current video. Manual upscaler / RTX HDR choices are
            published as user-data/stremioz/upscaler-choice and rtx-hdr-choice
@@ -358,6 +363,149 @@ local function rtx_hdr_active(meta)
     return session_pipeline == "rtx" and rtx_hdr_wanted(meta) and display_is_hdr()
 end
 
+-- ═══════════════════════════════════════════════════════════════════════════
+-- StremioZ: MOTION SMOOTHING (RIFE frame interpolation, part of AnimeJaNai)
+-- ═══════════════════════════════════════════════════════════════════════════
+-- libaji takes RIFE only from a profile's chains in animejanai.conf, and the
+-- factor (output frames per source frame) is fixed there. With smoothing on,
+-- the AnimeJaNai filter gets a conf StremioZ writes for the video: the user's
+-- conf, with Quality / Balanced / Performance (libaji's built-ins, or the
+-- user's own [slot_100x]) carrying RIFE on every chain, at the factor that
+-- takes this video to the display's refresh rate, at most 60 fps (23.976 fps
+-- on a 60 Hz screen: 5/2). RIFE runs before the upscale, at the source size.
+
+local MOTION_CONF = "~~/../animejanai/stremioz-motion.conf"
+local USER_AJN_CONF = "~~/../animejanai/animejanai.conf"
+local RIFE_MODEL = 426        -- rife_v4.26 (AnimeJaNai Manager's default), in animejanai/rife
+local MOTION_MAX_FPS = 60
+
+-- libaji 0.32's built-in slots (src/aji_conf.cpp add_builtin_slots), which a
+-- [slot_X] in the file replaces entirely.
+local HD_BAL = "2x_AnimeJaNai_HD_V3.1_Balanced_SPANF3_b8f64_unshuffle_fp16"
+local HD_PERF = "2x_AnimeJaNai_HD_V3.1_Performance_SPANF3_b5f48_unshuffle_fp16"
+local SD_MODEL = "2x_AnimeJaNai_SD_V1beta34_Compact_1x3xHxW_dyn-HW_strong_fp16_op21_dynamo"
+local BUILTIN_SLOTS = {
+    [1001] = { name = "Quality", preset_key = "quality_preset", chains = {
+        { "1280x720", "1920x1080", 31, HD_BAL }, { "0x0", "1280x720", 31, SD_MODEL },
+        { "0x0", "1920x1080", 61, HD_BAL } } },
+    [1002] = { name = "Balanced", preset_key = "balanced_preset", chains = {
+        { "1280x720", "1920x1080", 31, HD_BAL }, { "0x0", "1280x720", 31, SD_MODEL } } },
+    [1003] = { name = "Performance", preset_key = "performance_preset", chains = {
+        { "1280x720", "1920x1080", 31, HD_PERF }, { "0x0", "1280x720", 31, SD_MODEL } } },
+}
+
+local function motion_wanted(meta)
+    if state.override_motion ~= nil then return state.override_motion end
+    return meta.motion_smoothing == true
+end
+
+-- num/den with den <= 5 and num/den at most target/source, closest to it.
+-- nil when the video is already near the target rate.
+local function motion_factor()
+    local src = mp.get_property_number("container-fps") or mp.get_property_number("estimated-vf-fps")
+    local disp = mp.get_property_number("display-fps") or mp.get_property_number("estimated-display-fps") or 60
+    if not src or src <= 1 then return nil end
+    local target = math.min(disp, MOTION_MAX_FPS)
+    local r = target / src
+    if r < 1.5 then return nil end
+    local best_n, best_d, best_err
+    for d = 1, 5 do
+        local n = math.floor(r * d + 1e-6)
+        local err = r - n / d
+        if n > d and (not best_err or err < best_err - 1e-9) then
+            best_n, best_d, best_err = n, d, err
+        end
+    end
+    if not best_n then return nil end
+    if best_n / best_d > 8 then best_n, best_d = 8, 1 end
+    return best_n, best_d, src * best_n / best_d
+end
+
+-- Sections of an INI file, in order: { name = "global", lines = { ... } }.
+local function read_ini_sections(text)
+    local sections, cur = {}, nil
+    for line in (text or ""):gmatch("[^\r\n]+") do
+        local name = line:match("^%s*%[(.-)%]%s*$")
+        if name then
+            cur = { name = name:lower(), lines = {} }
+            table.insert(sections, cur)
+        elseif cur then
+            table.insert(cur.lines, line)
+        end
+    end
+    return sections
+end
+
+local function rife_lines(chain, num, den)
+    local p = "chain_" .. chain .. "_"
+    return {
+        p .. "rife=yes",
+        p .. "rife_model=" .. RIFE_MODEL,
+        p .. "rife_factor_numerator=" .. num,
+        p .. "rife_factor_denominator=" .. den,
+        p .. "rife_scene_detect_threshold=0.150",
+        p .. "rife_ensemble=no",
+        p .. "rife_before_upscale=yes",
+    }
+end
+
+-- Writes MOTION_CONF for this factor; returns true when written.
+local function write_motion_conf(num, den)
+    local sections = read_ini_sections(read_text(USER_AJN_CONF))
+    local global = {}
+    for _, s in ipairs(sections) do
+        if s.name == "global" then
+            for _, l in ipairs(s.lines) do
+                local k, v = l:match("^%s*([%w_]+)%s*=%s*(.-)%s*$")
+                if k then global[k:lower()] = v end
+            end
+        end
+    end
+    local out = { "; Written by StremioZ for motion smoothing (RIFE " .. num .. "/" .. den ..
+                  "), from animejanai.conf. Rewritten for every video; edit animejanai.conf instead." }
+    local done = {}
+    for _, s in ipairs(sections) do
+        local slot = tonumber(s.name:match("^slot_(%d+)$") or "")
+        table.insert(out, "[" .. s.name .. "]")
+        for _, l in ipairs(s.lines) do
+            -- the user's own RIFE keys in a Quality/Balanced/Performance slot give way to ours
+            if not (BUILTIN_SLOTS[slot] and l:match("^%s*chain_%d+_rife")) then table.insert(out, l) end
+        end
+        if BUILTIN_SLOTS[slot] then
+            local chains = {}
+            for _, l in ipairs(s.lines) do
+                local c = l:match("^%s*chain_(%d+)_")
+                if c then chains[tonumber(c)] = true end
+            end
+            for c in pairs(chains) do
+                for _, l in ipairs(rife_lines(c, num, den)) do table.insert(out, l) end
+            end
+            done[slot] = true
+        end
+    end
+    for slot, def in pairs(BUILTIN_SLOTS) do
+        if not done[slot] then
+            -- "sharp" presets swap the HD models (aji_conf.cpp apply_sharp_presets,
+            -- which only touches the built-ins, so it is applied here).
+            local sharp = (global[def.preset_key] or ""):lower() == "sharp"
+            table.insert(out, "[slot_" .. slot .. "]")
+            table.insert(out, "profile_name=" .. def.name .. " + RIFE")
+            for i, ch in ipairs(def.chains) do
+                local p = "chain_" .. i .. "_"
+                local model = ch[4]
+                if sharp then model = model:gsub("_HD_V3%.1_", "_HD_V3.1Sharp1_") end
+                table.insert(out, p .. "min_resolution=" .. ch[1])
+                table.insert(out, p .. "max_resolution=" .. ch[2])
+                table.insert(out, p .. "min_fps=0")
+                table.insert(out, p .. "max_fps=" .. ch[3])
+                table.insert(out, p .. "model_1_name=" .. model)
+                for _, l in ipairs(rife_lines(i, num, den)) do table.insert(out, l) end
+            end
+        end
+    end
+    return write_text(MOTION_CONF, table.concat(out, "\n") .. "\n")
+end
+
 -- StremioZ: tell the web UI about a manual choice so it becomes the default.
 -- The counter makes every choice a property change, even a repeated one.
 local choice_counter = 0
@@ -379,12 +527,14 @@ mp.register_script_message("anime-metadata", function(json_str)
             ", uw=" .. tostring(stremio_metadata.ultrawide_zoom) ..
             ", pipeline=" .. tostring(stremio_metadata.video_pipeline) ..
             ", rtx_hdr=" .. tostring(stremio_metadata.rtx_hdr) ..
-            ", rtx_vsr=" .. tostring(stremio_metadata.rtx_vsr))
+            ", rtx_vsr=" .. tostring(stremio_metadata.rtx_vsr) ..
+            ", motion=" .. tostring(stremio_metadata.motion_smoothing))
         -- StremioZ: remember the pipeline choice for the next session's start.
         persist_pipeline_setting(stremio_metadata.video_pipeline)
         save_defaults({ upscaler = stremio_metadata.upscaler,
                         rtx_hdr = stremio_metadata.rtx_hdr,
-                        rtx_vsr = stremio_metadata.rtx_vsr })
+                        rtx_vsr = stremio_metadata.rtx_vsr,
+                        motion_smoothing = stremio_metadata.motion_smoothing })
 
         state.metadata_ready = true
         state.metadata_arrival = mp.get_time() -- Track arrival time to prevent race-condition wipes
@@ -475,13 +625,25 @@ end
 -- StremioZ: insert AnimeJaNai with the chosen built-in slot. On the RTX
 -- pipeline it takes D3D11 frames and writes 4:2:0 output, which the D3D11
 -- video processor accepts, optionally followed by RTX Video HDR.
-local function apply_animejanai(slot, with_rtx_hdr)
+local function apply_animejanai(slot, with_rtx_hdr, with_motion)
     local vf = ajn_vf_string()
     if not vf then
         log("AnimeJaNai filter string not found (mpv-animejanai.conf missing?)")
         return false
     end
     vf = vf:gsub("slot=%d+", "slot=" .. slot)
+    -- StremioZ: motion smoothing runs from a conf written for this video.
+    local motion_label = nil
+    if with_motion then
+        local num, den, out_fps = motion_factor()
+        if not num then
+            log("Motion smoothing: not needed at this frame rate")
+        elseif write_motion_conf(num, den) then
+            vf = vf:gsub(":conf=[^:]+", ":conf=" .. MOTION_CONF)
+            motion_label = string.format("Smooth %d fps", math.floor(out_fps + 0.5))
+            log(string.format("Motion smoothing: RIFE %d/%d -> %.3f fps", num, den, out_fps))
+        end
+    end
     if session_pipeline == "rtx" then
         vf = vf .. ":output-444=no"
     end
@@ -498,7 +660,7 @@ local function apply_animejanai(slot, with_rtx_hdr)
         -- AnimeJaNai's grain is tuned for SDR; not applied to RTX HDR output.
         mp.set_property("glsl-shaders", AJN_SHADERS)
     end
-    return true
+    return true, motion_label
 end
 
 -- StremioZ: RTX Video Super Resolution and/or HDR for live action, in one
@@ -928,7 +1090,10 @@ function try_execute_profile()
         if upscaler.kind == "ajn" then
             -- Legacy interlaced SD: GPU deinterlacing keeps frames on the GPU.
             if is_legacy_anime then mp.set_property("deinterlace", "yes") end
-            if apply_animejanai(upscaler.slot, use_rtx_hdr) then
+            local ok, motion_label = apply_animejanai(upscaler.slot, use_rtx_hdr, motion_wanted(meta))
+            if ok then
+                state.ajn_active = true
+                if motion_label then table.insert(osd_parts, motion_label) end
                 if use_rtx_hdr then table.insert(osd_parts, "RTX HDR") end
             else
                 apply_anime_shaders("optimized", is_legacy_anime, is_hdr and hdr_passthrough)
@@ -1008,6 +1173,26 @@ mp.register_script_message("stremioz-set-rtx-hdr", function(value)
     end
 end)
 
+-- StremioZ: motion smoothing (RIFE) on/off for this video (player menu, Ctrl+M).
+-- Applies to anime upscaled by AnimeJaNai.
+mp.register_script_message("stremioz-set-motion", function(value)
+    local meta = stremio_metadata or load_defaults()
+    local on
+    if value == "toggle" then on = not motion_wanted(meta)
+    else on = (value == "yes" or value == "true" or value == "on") end
+    state.override_motion = on
+    publish_choice("motion-choice", on and "yes" or "no")
+    save_defaults({ motion_smoothing = on })
+    local note = ""
+    if on and not state.ajn_active then note = " (with AnimeJaNai, on anime)" end
+    mp.osd_message("Motion smoothing: " .. (on and "on" or "off") .. note, 3)
+    if state.video_params_ready then
+        state.profile_applied = false
+        state.metadata_timed_out = true
+        try_execute_profile()
+    end
+end)
+
 -- Observer for video-params (Phase 1 of Latch)
 mp.observe_property('video-params', 'native', function(_, params)
     -- STRICT VALIDATION: Ignore partial updates.
@@ -1037,6 +1222,8 @@ mp.register_event('start-file', function()
     state.metadata_timed_out = false
     state.override_upscaler = nil
     state.override_rtx_hdr = nil
+    state.override_motion = nil
+    state.ajn_active = nil
     state.detected_anime = nil
     if state.metadata_timer then state.metadata_timer:kill(); state.metadata_timer = nil end
     -- StremioZ: fix the video pipeline for this session before the first

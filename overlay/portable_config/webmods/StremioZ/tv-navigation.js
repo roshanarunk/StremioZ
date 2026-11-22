@@ -557,15 +557,17 @@
   }
 
   // ───────────────────────────── player quick menu
-  // Upscaler and RTX HDR choices also become the defaults for the next video
+  // Upscaler, motion smoothing and RTX HDR choices also become the defaults for the next video
   // (profile-manager publishes them; player-prefs.js saves them).
   const sendUpscaler = (k) => mpvCmd("script-message-to", "profile_manager", "stremioz-set-upscaler", k);
   const sendRtxHdr = (on) => mpvCmd("script-message-to", "profile_manager", "stremioz-set-rtx-hdr", on ? "yes" : "no");
+  const sendMotion = (on) => mpvCmd("script-message-to", "profile_manager", "stremioz-set-motion", on ? "yes" : "no");
   function quickOpen() {
     quickClose();
     const prefs = window.StremioZPrefs;
     const ups = prefs ? prefs.upscaler() : null;
     const rtx = prefs ? prefs.rtxHdr() : true;
+    const motion = prefs ? prefs.motion() : false;
     const items = [
       ["Subtitles", () => key("s", "KeyS")],
       ["Audio", () => key("a", "KeyA")],
@@ -576,6 +578,7 @@
       ["AnimeJaNai Balanced", () => sendUpscaler("ajn-balanced"), ups === "ajn-balanced"],
       ["AnimeJaNai Performance", () => sendUpscaler("ajn-performance"), ups === "ajn-performance"],
       ["Upscaling off", () => sendUpscaler("off"), ups === "off"],
+      [motion ? "Motion smoothing: on" : "Motion smoothing: off", () => sendMotion(!motion), motion],
       [rtx ? "RTX HDR: on" : "RTX HDR: off", () => sendRtxHdr(!rtx), rtx],
       ["Skip intro", () => mpvCmd("script-message-to", "notify_skip", "perform-skip")],
       ["Next episode", nextEpisode],

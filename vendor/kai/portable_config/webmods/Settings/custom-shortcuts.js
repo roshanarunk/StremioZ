@@ -114,6 +114,11 @@
       description: "Switches RTX HDR now; later videos follow. Needs Windows HDR on the display.",
     },
     {
+      name: "Motion Smoothing On / Off",
+      keys: ["Ctrl", "+", "M"],
+      description: "RIFE frame interpolation for anime (AnimeJaNai), to the display rate up to 60 fps; later videos follow.",
+    },
+    {
       name: "AnimeJaNai Manager",
       keys: ["Ctrl", "+", "E"],
       description: "Custom profiles, backend (TensorRT / DirectML) and models.",

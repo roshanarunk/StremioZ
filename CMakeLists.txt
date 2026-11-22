@@ -5,7 +5,7 @@ project(stremio VERSION "5.0.22")
 # StremioZ's own release version (the project version above is the Community
 # shell it is based on, which the web UI sees as shellVersion). The installer,
 # updater feed and exe version resource all take it from here.
-set(STREMIOZ_VERSION "0.9.1")
+set(STREMIOZ_VERSION "0.9.2")
 string(REPLACE "." ";" _szv "${STREMIOZ_VERSION}")
 list(GET _szv 0 STREMIOZ_VERSION_MAJOR)
 list(GET _szv 1 STREMIOZ_VERSION_MINOR)

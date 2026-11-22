@@ -14,6 +14,7 @@ StremioZ combines four projects into one app:
 ## Features
 
 - **AnimeJaNai upscaling** for anime (Quality, Balanced, Performance), picked automatically from Stremio's metadata. The last preset you choose while watching becomes the default.
+- **Motion smoothing**: AnimeJaNai's RIFE frame interpolation takes 24 fps anime to your display's refresh rate (up to 60 fps). Off by default; Settings → Player.
 - **RTX Video HDR and Super Resolution** on NVIDIA RTX GPUs, together with AnimeJaNai: TensorRT runs on Direct3D 11 frames, so 4K Quality with RTX HDR plays at 60 fps.
 - **Game controllers**: Xbox, PlayStation, Switch Pro and most others, through SDL3. Every screen works with a pad: an on-screen keyboard for search, a player menu for subtitles, audio, speed, upscaler and HDR, and button hints with the right glyphs.
 - **TV mode**: fullscreen, no cursor, and an interface scaled for a TV at high Windows scaling. The **StremioZ TV mode** shortcut opens straight into it.

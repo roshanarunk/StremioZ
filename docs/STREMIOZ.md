@@ -140,7 +140,7 @@ Any controller SDL3 knows works (Xbox, PlayStation, Switch Pro, most generic pad
 | A | Select; on a text field, on-screen keyboard; on a dropdown, a list | Play / pause |
 | B | Close menu or dialog, else back | Close menu, else leave the player |
 | X | Search (opens the keyboard) | Skip intro |
-| Y | Home | Player menu: subtitles, audio, speed, AnimeJaNai preset, RTX HDR on/off, next episode, episode list |
+| Y | Home | Player menu: subtitles, audio, speed, AnimeJaNai preset, motion smoothing on/off, RTX HDR on/off, next episode, episode list |
 | LB / RB | Previous / next page (Board, Discover, Library, Calendar, Addons, Settings) | Speed −/+ 0.25 |
 | LT / RT | Jump three items up / down | Seek −/+ 85 s |
 | Right stick | Scroll; the highlight moves with the list | ▲ ▼ volume |
@@ -196,6 +196,18 @@ The hero banner on the home screen defaults to **For You** (Settings → Hero Ba
 
 The list is cached for 12 hours, or until the set of your top titles changes. The ID mappings are kept for 30 days, so after the first build (about 35 s, in the background) a rebuild takes a fraction of a second. The other sources (trending lists, Cinemeta, Custom) are still in the dropdown, and Kai's anime airing-schedule mode is unchanged.
 
+## Motion smoothing (RIFE)
+
+**Settings → Player → Motion Smoothing (RIFE)**, off by default. It's AnimeJaNai's RIFE frame interpolation (model v4.26, the AnimeJaNai Manager's default), and runs on anime that AnimeJaNai upscales. It takes the video to the display's refresh rate, at most 60 fps: 23.976 fps on a 60 Hz screen is interpolated 5/2 to 59.94 fps. A video already near that rate (50/60 fps) is left alone. RIFE runs before the upscale, at the source resolution.
+
+libaji reads RIFE only from a profile's chains in `animejanai.conf`, so with smoothing on, `profile-manager.lua` writes `animejanai/stremioz-motion.conf` for each video and gives the AnimeJaNai filter that file instead. It holds:
+- the user's `animejanai.conf`;
+- Quality / Balanced / Performance (libaji's built-in slots 1001–1003, or the user's own `[slot_100x]`) with RIFE on every chain at the video's factor.
+
+The model ships in the package (`animejanai/rife`, 11 MB, MIT: `licenses/RIFE.txt`). `tools/fetch-deps.ps1` takes it from the-database's `models-rife-fp16-2` release (`tools/components.json`).
+
+Measured on an RTX 5070 Ti (RTX Video pipeline, Windows HDR off): 1080p 23.976 fps → RIFE 5/2 → AnimeJaNai to 4K at a steady 59.94 fps, no dropped frames after the first second, about 72% GPU. Not yet measured together with RTX Video HDR.
+
 ## Keys in the player
 
 | Key | Action |
@@ -205,6 +217,7 @@ The list is cached for 12 hours, or until the set of your top titles changes. Th
 | Shift+1 / 2 / 3 | AnimeJaNai Quality / Balanced / Performance (this video, anime or not) |
 | Ctrl+0 | Upscaling off (this video) |
 | Ctrl+H | RTX Video HDR on / off (needs Windows HDR on the display) |
+| Ctrl+M | Motion smoothing (RIFE) on / off |
 | Ctrl+Shift+← / → | Seek −/+ 85 s (skip an opening) |
 | Ctrl+Shift+↑ / ↓, Ctrl+Shift+Home | Speed +/− 0.25, back to 1× |
 | Ctrl+Shift+1 … 9 | AnimeJaNai custom slots |
@@ -215,7 +228,7 @@ The list is cached for 12 hours, or until the set of your top titles changes. Th
 | Tab | Skip intro (when offered) |
 | T | Stats |
 
-The upscaler for anime is chosen in **Settings → Player → Anime Upscaler** (default: AnimeJaNai Balanced). Switching while watching (Shift+1/2/3, Ctrl+0, or the controller's player menu) applies at once and **becomes the new default**: the next anime starts with it, and Settings shows it. RTX Video HDR works the same way (Ctrl+H or the player menu; Settings → Player → RTX Video HDR). Turning upscaling off on a video that isn't anime doesn't change the anime default. Local files and plain URLs, which come without Stremio's metadata, use the same defaults (`portable_config/cache/stremioz-defaults.json`).
+The upscaler for anime is chosen in **Settings → Player → Anime Upscaler** (default: AnimeJaNai Balanced). Switching while watching (Shift+1/2/3, Ctrl+0, or the controller's player menu) applies at once and **becomes the new default**: the next anime starts with it, and Settings shows it. RTX Video HDR (Ctrl+H; Settings → Player → RTX Video HDR) and motion smoothing (Ctrl+M; Settings → Player → Motion Smoothing) work the same way, from the keys or the player menu. Turning upscaling off on a video that isn't anime doesn't change the anime default. Local files and plain URLs, which come without Stremio's metadata, use the same defaults (`portable_config/cache/stremioz-defaults.json`).
 
 ## Known issues
 

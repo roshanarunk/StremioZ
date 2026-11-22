@@ -33,6 +33,8 @@
     videoPipeline: "stremioz-video-pipeline",
     rtxHdr: "stremioz-rtx-hdr",
     rtxVsr: "stremioz-rtx-vsr",
+    // StremioZ: RIFE motion smoothing (default off)
+    motion: "stremioz-motion",
     colorProfile: "kai-color-profile",
     iccProfile: "kai-icc-profile",
     // Smart Track Logic
@@ -458,6 +460,9 @@
   ];
   function getVideoPipeline() {
     return localStorage.getItem(STORAGE_KEYS.videoPipeline) || "auto";
+  }
+  function getMotionSmoothing() {
+    return localStorage.getItem(STORAGE_KEYS.motion) === "true"; // Default OFF
   }
   function getRtxHdr() {
     return localStorage.getItem(STORAGE_KEYS.rtxHdr) !== "false"; // Default ON
@@ -1022,6 +1027,17 @@
     anime4kDropdown.appendChild(anime4kNote);
     injectionFragment.appendChild(anime4kDropdown);
 
+    // StremioZ: motion smoothing (RIFE, part of the AnimeJaNai chain)
+    const motionToggle = createToggleOption(
+      "Motion Smoothing (RIFE)",
+      "AI frame interpolation for anime upscaled by AnimeJaNai: smooths 24 fps to your display's refresh rate (up to 60 fps). Ctrl+M or the controller's player menu switch it while watching.",
+      getMotionSmoothing(),
+      (val) => {
+        localStorage.setItem(STORAGE_KEYS.motion, val.toString());
+        sendConfigUpdate();
+      },
+    );
+
     // ─────────────────────────────────────────────────────────────────────────
     // WRAP & ORGANIZE SECTIONS
     // ─────────────────────────────────────────────────────────────────────────
@@ -1055,6 +1071,7 @@
     const animeSection = wrapInSection(
       animeHeader,
       anime4kDropdown, // anime4kNote is already inside
+      motionToggle, // StremioZ
     );
 
     // ─────────────────────────────────────────────────────────────────────────
@@ -1452,6 +1469,7 @@
   window.MpvSettings.getUpscaler = getUpscaler;
   window.MpvSettings.getVideoPipeline = getVideoPipeline;
   window.MpvSettings.getRtxHdr = getRtxHdr;
+  window.MpvSettings.getMotionSmoothing = getMotionSmoothing; // StremioZ
   window.MpvSettings.getRtxVsr = getRtxVsr;
   window.MpvSettings.getColorProfile = getColorProfile;
   window.MpvSettings.getIccProfile = getIccProfile;

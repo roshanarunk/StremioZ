@@ -107,6 +107,7 @@ $ajn = Join-Path $Deps 'animejanai-runtime'
 if (-not (Test-Path $ajn)) { throw 'AnimeJaNai runtime missing: run tools\fetch-deps.ps1' }
 Get-ChildItem $ajn -File | Where-Object Name -notlike '.*' | Copy-Item -Force -Destination $Out
 Copy-Tree (Join-Path $ajn 'licenses') (Join-Path $Out 'licenses')
+Copy-Tree (Join-Path $Root 'overlay\licenses') (Join-Path $Out 'licenses')   # StremioZ's own notices (RIFE)
 Copy-Tree (Join-Path $ajn 'animejanai\inference') (Join-Path $Out 'animejanai\inference')
 # StremioZ's aji_trt.dll (TensorRT on D3D11 frames, tools/build-libaji.ps1) over the package's.
 $patchedTrt = Join-Path $Deps 'libaji\aji_trt.dll'
@@ -114,6 +115,12 @@ if (Test-Path $patchedTrt) {
     Copy-Item -Force $patchedTrt (Join-Path $Out 'animejanai\inference\aji_trt.dll')
 } else { Write-Warning 'patched aji_trt.dll missing (tools/build-libaji.ps1): TensorRT will not take D3D11 frames' }
 Copy-Tree (Join-Path $ajn 'animejanai\onnx') (Join-Path $Out 'animejanai\onnx')
+# RIFE models for motion smoothing (tools/fetch-deps.ps1).
+$rife = Join-Path $Deps 'rife'
+if (Test-Path $rife) {
+    New-Item -ItemType Directory -Force (Join-Path $Out 'animejanai\rife') | Out-Null
+    Get-ChildItem $rife -Filter *.onnx | Copy-Item -Force -Destination (Join-Path $Out 'animejanai\rife')
+} else { Write-Warning 'RIFE models missing (tools/fetch-deps.ps1): motion smoothing will not work' }
 Copy-IfMissing (Join-Path $ajn 'animejanai\animejanai.conf') (Join-Path $Out 'animejanai\animejanai.conf')
 Copy-Tree (Join-Path $ajn 'portable_config') $cfg
 

@@ -1,8 +1,8 @@
 /**
  * @name StremioZ Player Preferences
  * @description Manual choices made while watching become the defaults for the
- *   next video: the anime upscaler preset (Shift+1/2/3, Ctrl+0, player menu)
- *   and RTX Video HDR (Ctrl+H, player menu).
+ *   next video: the anime upscaler preset (Shift+1/2/3, Ctrl+0, player menu),
+ *   RTX Video HDR (Ctrl+H, player menu) and motion smoothing (Ctrl+M, player menu).
  *
  * profile-manager.lua publishes each choice as
  *   user-data/stremioz/upscaler-choice = "ajn-quality#7"
@@ -16,10 +16,11 @@
   "use strict";
   if (window.StremioZPrefs) return;
 
-  const KEYS = { upscaler: "stremioz-upscaler", rtxHdr: "stremioz-rtx-hdr" };
+  const KEYS = { upscaler: "stremioz-upscaler", rtxHdr: "stremioz-rtx-hdr", motion: "stremioz-motion" };
   const PROPS = {
     "user-data/stremioz/upscaler-choice": (v) => set(KEYS.upscaler, v),
     "user-data/stremioz/rtx-hdr-choice": (v) => set(KEYS.rtxHdr, v === "yes" ? "true" : "false"),
+    "user-data/stremioz/motion-choice": (v) => set(KEYS.motion, v === "yes" ? "true" : "false"),
   };
 
   function set(key, value) {
@@ -76,5 +77,6 @@
   window.StremioZPrefs = {
     upscaler: () => localStorage.getItem(KEYS.upscaler) || "ajn-balanced",
     rtxHdr: () => localStorage.getItem(KEYS.rtxHdr) !== "false", // default on
+    motion: () => localStorage.getItem(KEYS.motion) === "true", // default off
   };
 })();

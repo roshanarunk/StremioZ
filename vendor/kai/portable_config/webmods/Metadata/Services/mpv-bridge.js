@@ -144,6 +144,8 @@
       "auto";
     const rtxHdr = localStorage.getItem("stremioz-rtx-hdr") !== "false";
     const rtxVsr = localStorage.getItem("stremioz-rtx-vsr") !== "false";
+    // StremioZ: RIFE motion smoothing (default off)
+    const motionSmoothing = localStorage.getItem("stremioz-motion") === "true";
 
     const colorProfile =
       window.MpvSettings?.getColorProfile?.() ||
@@ -177,6 +179,7 @@
       video_pipeline: videoPipeline,
       rtx_hdr: rtxHdr,
       rtx_vsr: rtxVsr,
+      motion_smoothing: motionSmoothing,
       color_profile: colorProfile,
       icc_profile: iccProfile,
       // New fields
@@ -192,7 +195,7 @@
       metadata,
     ]);
     console.log(
-      `[MPV Bridge] Sent: ${imdbId} → anime:${isAnime}, Type:${contentType}, Audio:${audioPreset}, HDR:${hdrPassthrough} (Peak:${targetPeak}), Upscaler:${upscaler}, Pipeline:${videoPipeline} (RTX HDR:${rtxHdr}, VSR:${rtxVsr}), Color:${colorProfile}, ICC:${iccProfile}, Ultrawide:${ultrawideZoom}`,
+      `[MPV Bridge] Sent: ${imdbId} → anime:${isAnime}, Type:${contentType}, Audio:${audioPreset}, HDR:${hdrPassthrough} (Peak:${targetPeak}), Upscaler:${upscaler}, Pipeline:${videoPipeline} (RTX HDR:${rtxHdr}, VSR:${rtxVsr}), Motion:${motionSmoothing}, Color:${colorProfile}, ICC:${iccProfile}, Ultrawide:${ultrawideZoom}`,
     );
   }
 

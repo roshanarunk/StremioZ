@@ -47,5 +47,15 @@
     "repo": "the-database/animejanai-inference",
     "tag": "v0.32.0",
     "patch": "patches/libaji-0.32.0-d3d11-bridge.patch"
+  },
+  "rife": {
+    "_note": "RIFE models for AnimeJaNai's motion smoothing (the release AnimeJaNai 3.12.5 pins as deps.rife). Only the models listed are shipped (MIT, from Practical-RIFE via vs-mlrt), into animejanai/rife.",
+    "repo": "the-database/animejanai-inference",
+    "tag": "models-rife-fp16-2",
+    "asset": "rife-fp16-2.7z",
+    "sha256": "85fa8aa7408f82636f53a3179998e021708746ff85c7468ae11a0d3157af1451",
+    "models": [
+      "rife_v4.26.onnx"
+    ]
   }
 }

@@ -119,6 +119,23 @@ if ($Force -or -not (Test-Path $ajnStamp) -or (Get-Content $ajnStamp) -ne $Comp.
     Write-Host "AnimeJaNai runtime ready: $ajnDir"
 } else { Write-Host 'AnimeJaNai runtime: up to date' }
 
+# ---------------------------------------------------------------- RIFE models
+# Motion smoothing (AnimeJaNai's RIFE). Only the listed models, into deps\rife.
+$rifeDir = Join-Path $Deps 'rife'
+$rifeStamp = Join-Path $rifeDir '.tag'
+$rifeWant = "$($Comp.rife.tag) $($Comp.rife.models -join ',')"
+if ($Force -or -not (Test-Path $rifeStamp) -or (Get-Content $rifeStamp) -ne $rifeWant) {
+    $c = $Comp.rife
+    $archive = Get-Asset $c.repo $c.tag $c.asset $c.sha256
+    if (Test-Path $rifeDir) { Remove-Item -Recurse -Force $rifeDir }
+    New-Item -ItemType Directory -Force $rifeDir | Out-Null
+    & $SevenZip e -y "-o$rifeDir" $archive @($c.models) | Out-Null
+    if ($LASTEXITCODE -ne 0) { throw 'extracting the RIFE models failed' }
+    foreach ($m in $c.models) { if (-not (Test-Path (Join-Path $rifeDir $m))) { throw "RIFE model $m not in $($c.asset)" } }
+    Set-Content $rifeStamp $rifeWant
+    Write-Host "RIFE models ready: $rifeDir"
+} else { Write-Host 'RIFE models: up to date' }
+
 # ---------------------------------------------------------------- patched aji_trt
 # TensorRT on D3D11 frames (tools/build-libaji.ps1; downloads ~2.2 GB of SDKs once).
 & (Join-Path $PSScriptRoot 'build-libaji.ps1') -Force:$Force
