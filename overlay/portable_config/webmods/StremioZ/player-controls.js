@@ -8,6 +8,8 @@
  *     button. It shows profile-manager.lua's state for this video
  *     (user-data/stremioz/motion-state: "on", "wanted", "off") and switches it
  *     like Ctrl+M.
+ *   - A fullscreen button at the end of the control bar, where the controller
+ *     can reach it (Stremio's own is in the top bar).
  */
 (function () {
   "use strict";
@@ -160,32 +162,76 @@
     button.title = TITLES[motionState] || TITLES.off;
   }
 
+  // ───────────────────────────── fullscreen button
+  // Stremio's own fullscreen button is in the player's top bar, where the
+  // controller's control-bar navigation doesn't go. This one sits at the end
+  // of the control bar; webmods/StremioZ/fullscreen.js routes the page's
+  // fullscreen API to the window.
+  const FS_ICONS = {
+    enter:
+      '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">' +
+      '<path d="M4 9V4h5M20 9V4h-5M4 15v5h5M20 15v5h-5"/></svg>',
+    exit:
+      '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">' +
+      '<path d="M9 4v5H4M15 4v5h5M9 20v-5H4M15 20v-5h5"/></svg>',
+  };
+  let fsButton = null;
+  let iconClass = null;
+  const isFullscreen = () => !!document.fullscreenElement;
+  function syncFullscreenButton() {
+    if (!fsButton) return;
+    const on = isFullscreen();
+    if (fsButton.dataset.on === String(on)) return;
+    fsButton.dataset.on = String(on);
+    fsButton.innerHTML = on ? FS_ICONS.exit : FS_ICONS.enter;
+    if (iconClass) fsButton.firstElementChild.setAttribute("class", iconClass);
+    fsButton.title = on ? "Exit fullscreen (F)" : "Fullscreen (F)";
+  }
+  document.addEventListener("fullscreenchange", syncFullscreenButton);
+
+  // A control-bar button with the class names of Stremio's own buttons (the
+  // pinned build's hashes).
+  function makeButton(peer, extraClass, onClick) {
+    const b = document.createElement("div");
+    b.className = [...peer.classList].filter((c) => c !== "disabled" && !c.startsWith("szp-")).join(" ") + " " + extraClass;
+    b.tabIndex = -1;
+    b.addEventListener("mousedown", (e) => e.stopPropagation());
+    b.addEventListener("click", (e) => {
+      e.preventDefault();
+      e.stopPropagation();
+      onClick();
+    });
+    return b;
+  }
+
   function ensureButton() {
     if (!onPlayer()) return;
     const box = document.querySelector('[class*="control-bar-buttons-menu-container-"]');
     if (!box) return;
-    if (button && box.contains(button)) return;
-    // Copy the class names of Stremio's own buttons (the pinned build's hashes).
-    const peer = box.querySelector('[class*="control-bar-button-"]');
+    if (button && box.contains(button) && fsButton && box.contains(fsButton)) return;
+    const peer = box.querySelector('[class*="control-bar-button-"]:not(.szp-motion):not(.szp-fullscreen)');
     if (!peer) return;
-    button = document.createElement("div");
-    button.className =
-      [...peer.classList].filter((c) => c !== "disabled" && !c.startsWith("szp-")).join(" ") + " szp-motion";
-    button.tabIndex = -1;
-    button.innerHTML = ICON;
-    const icon = peer.querySelector("svg")?.getAttribute("class");
-    if (icon) button.firstElementChild.setAttribute("class", icon);
-    button.addEventListener("mousedown", (e) => e.stopPropagation());
-    button.addEventListener("click", (e) => {
-      e.preventDefault();
-      e.stopPropagation();
-      send("mpv-command", ["script-message-to", "profile_manager", "stremioz-set-motion", "toggle"]);
-      // Shown at once; profile-manager confirms with the state for this video.
-      motionState = motionState === "off" ? "wanted" : "off";
+    iconClass = peer.querySelector("svg")?.getAttribute("class") || null;
+    if (!button || !box.contains(button)) {
+      button = makeButton(peer, "szp-motion", () => {
+        send("mpv-command", ["script-message-to", "profile_manager", "stremioz-set-motion", "toggle"]);
+        // Shown at once; profile-manager confirms with the state for this video.
+        motionState = motionState === "off" ? "wanted" : "off";
+        syncButton();
+      });
+      button.innerHTML = ICON;
+      if (iconClass) button.firstElementChild.setAttribute("class", iconClass);
+      box.insertBefore(button, box.firstChild);
       syncButton();
-    });
-    box.insertBefore(button, box.firstChild);
-    syncButton();
+    }
+    if (!fsButton || !box.contains(fsButton)) {
+      fsButton = makeButton(peer, "szp-fullscreen", () => {
+        if (isFullscreen()) document.exitFullscreen().catch(() => {});
+        else document.documentElement.requestFullscreen().catch(() => {});
+      });
+      box.appendChild(fsButton);
+      syncFullscreenButton();
+    }
   }
 
   // The control bar is re-rendered while playing (and absent while hidden).

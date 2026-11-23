@@ -20,7 +20,8 @@ StremioZ combines four projects into one app:
 - **Game controllers**: Xbox, PlayStation, Switch Pro and most others, through SDL3. Every screen works with a pad: an on-screen keyboard for search, a player menu for subtitles, audio, speed, upscaler and HDR, and button hints with the right glyphs.
 - **TV mode**: fullscreen, no cursor, and an interface scaled for a TV at high Windows scaling. The **StremioZ TV mode** shortcut opens straight into it.
 - **For You**: the home banner recommends shows from your own watch history (AniList for anime, Cinemeta genres for the rest). No API keys needed. Kai's Movies and Anime banner modes are still a click away.
-- **Stremio Kai's interface**: themes, hero banner, enhanced metadata and ratings, smart audio and subtitle selection, skip intro.
+- **Skip intro**: from the file's chapters, else AniSkip (anime) or IntroDB, else silence detection. Tab or X on the controller.
+- **Stremio Kai's interface**: themes, hero banner, enhanced metadata and ratings, smart audio and subtitle selection.
 - Everything from Stremio Community: native mpv playback, HDR passthrough, Discord presence, thumbnail previews, local files and torrents.
 - **Automatic updates**, signed, from this repository's releases.
 

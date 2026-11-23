@@ -26,10 +26,18 @@
   display: block;
 }
 .szt-ring.glide {
-  transition: left 0.14s ease-out, top 0.14s ease-out, width 0.14s ease-out, height 0.14s ease-out;
+  transition: left 0.09s ease-out, top 0.09s ease-out, width 0.09s ease-out, height 0.09s ease-out;
 }
 body.szt-tv .szt-focus {
   outline: none !important;
+}
+
+/* Snappier interface with the controller: the theme's 0.2 to 0.5 s hover and
+   focus transitions (card zoom, button highlights, menus) run in 0.08 s. The
+   hero banner keeps its slow crossfade. */
+body.szt-tv *:not(.hero-container, .hero-container *, .szt-hints, .szt-toast) {
+  transition-duration: 0.08s !important;
+  transition-delay: 0s !important;
 }
 
 /* Button hints */

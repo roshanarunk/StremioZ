@@ -1580,9 +1580,11 @@
     const targetRect = targetEpisode.getBoundingClientRect();
     const targetTop = targetRect.top - parentRect.top + scrollParent.scrollTop;
 
+    // StremioZ: jump straight there (the smooth scroll was slow, and the
+    // controller focus waits for the list to stop moving).
     scrollParent.scrollTo({
       top: Math.max(0, targetTop),
-      behavior: "smooth",
+      behavior: "instant",
     });
   }
 

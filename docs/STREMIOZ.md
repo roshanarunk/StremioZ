@@ -62,6 +62,7 @@ The result is `dist\StremioZ\StremioZ.exe`, a portable folder. For the installer
 | `overlay/portable_config` | `mpv.conf`: AnimeJaNai defaults, then Kai's tuning, then Stremio overrides (no watch-later, no forced `alang`/`slang`). Keeps `gpu-api=vulkan` (CUDA interop).<br>`input.conf`: Kai's keys plus AnimeJaNai's, without SVP and without `q quit` |
 | server.js | Pinned to Stremio's current upload of v4.20.15. Community's recorded checksum is from an older upload. |
 | `src/stremioz/gamepad.cpp` | Native controller input (SDL3): Xbox, PlayStation, Switch Pro and generic pads, hot-plug. Presses, auto-repeats and releases go to the web UI as `stremioz-gamepad` messages while StremioZ is the foreground window. `stremioz-fullscreen` lets the web UI switch fullscreen. |
+| Fullscreen | One fullscreen for the mouse, keyboard and controller. `webmods/StremioZ/fullscreen.js` sends the page's fullscreen requests for the whole page (Stremio's button, F, double-click) to the shell's window fullscreen (`stremioz-fullscreen`), which a controller press can also use. The page reports the shell's state, which `ToggleFullScreen` posts on every change (`{"type":"stremioz-fullscreen","on":…}`), so Stremio's button always shows the right state. Esc leaves fullscreen. The player's control bar also has a fullscreen button at its right end (`webmods/StremioZ/player-controls.js`), where the controller's control-bar navigation reaches it; Stremio's own is in the top bar. Before 0.9.4 the controller's fullscreen and the page's were separate, so the button took several clicks after TV mode, and a controller couldn't use it. |
 | `src/stremioz/ui_scale.cpp` | TV interface scale: in fullscreen on a display under 1000 logical pixels tall (a 4K TV at 300 % is 1280×720), the WebView2 zoom is set so the UI lays out at about 1080 CSS pixels, the size Kai is designed for. `[StremioZ] UiScale` in `stremio-settings.ini`: `auto` (default), `off`, or a fixed factor such as `0.75`. |
 
 ## NVIDIA RTX Video (Phases 3 and 4)
@@ -136,14 +137,14 @@ Any controller SDL3 knows works (Xbox, PlayStation, Switch Pro, most generic pad
 
 | Button | Browsing | Player |
 |---|---|---|
-| D-pad / left stick | Move (hold to repeat) | ◀ ▶ seek 10 s (hold: keeps seeking), ▲ control bar, ▼ hide it |
+| D-pad / left stick | Move (hold to repeat) | ◀ ▶ seek 10 s (hold: keeps seeking), ▲ control bar (its last button is fullscreen), ▼ hide it |
 | A | Select; on a text field, on-screen keyboard; on a dropdown, a list | Play / pause |
 | B | Close menu or dialog, else back | Close menu, else leave the player |
 | X | Search (opens the keyboard) | Skip intro |
 | Y | Home | Player menu: subtitles, audio, speed, AnimeJaNai preset, motion smoothing on/off, RTX HDR on/off, next episode, episode list |
 | LB / RB | Previous / next page (Board, Discover, Library, Calendar, Addons, Settings) | Speed −/+ 0.25 |
 | LT / RT | Jump three items up / down | Seek −/+ 85 s |
-| Right stick | Scroll; the highlight moves with the list | ▲ ▼ volume |
+| Right stick | Scroll while held (faster after a moment); the highlight moves with the list as it scrolls, and on release the list settles on the nearest row | ▲ ▼ volume |
 | Start | Done (keyboard) | Next episode |
 | View | Show / hide the button hints | Episode list |
 | L3 / R3 | | Subtitle / audio menu |
@@ -156,9 +157,11 @@ The first controller press turns on TV mode:
 
 The hints fade after 5 idle seconds and return on the next press.
 
+In TV mode the interface is tuned for speed: moving the focus scrolls in about 120 ms (Chromium's smooth scrolling took up to half a second), the focus ring glides in 90 ms, and the theme's hover and focus transitions run in 0.08 s (the hero banner keeps its crossfade).
+
 The **StremioZ TV mode** shortcut (`StremioZ.exe --tv`) starts in TV mode: fullscreen, with the controller focus ready. Run while StremioZ is open, it switches the open window to TV mode.
 
-Focus is remembered per page, so Back returns to the poster you left. When a show opens, Stremio scrolls its episode list to the episode you're on. The first focus waits for that scroll and lands on that episode (the one in progress, else the one in the middle), instead of going back to episode 1. A menu opened from any button (L3/R3, the player menu's Subtitles or Audio) gets focus on its first item.
+Focus is remembered per page, so Back returns to the poster you left. When a show opens, Kai jumps its episode list to the episode you're on (at once since 0.9.4; it used to scroll slowly). The first focus waits for that and lands on that episode (the one in progress, else the one in the middle), instead of going back to episode 1. A menu opened from any button (L3/R3, the player menu's Subtitles or Audio) gets focus on its first item.
 
 Stremio's web UI turns Escape into "back" unless a component handles it, and the player's subtitle, audio and speed menus and the episode drawer don't. Escape there used to leave the stream. StremioZ closes the menu instead, for B and for a keyboard's Esc alike.
 
@@ -185,12 +188,13 @@ The interface size applies in fullscreen only. Auto lays the interface out at ab
 - Icon and splash: `images/stremioz.ico` / `.png`, drawn by `tools/make-icon.py`. The installer art comes from `tools/make-installer-art.py`.
 - The version is `STREMIOZ_VERSION` in `CMakeLists.txt` (exe version resource, updater, installer). The web UI still sees the Community shell version (`APP_VERSION`) as `shellVersion`.
 - Kai's welcome wizard says "Welcome to StremioZ"; its links that support Kai's author are kept.
+- The logo at the top left of the interface is the StremioZ icon (`webmods/StremioZ/branding.css`, a 128 px copy of `images/stremioz.png`, replacing Kai's).
 
 ## Hero banner: For You
 
 The hero banner on the home screen has three modes, switched with the arrows button at the top right (Movies → Anime → For You; the banner names the new mode for a moment):
 - **Movies**: Kai's movie and series sources (Settings → Hero Banner: Movie Catalog, Series Catalog);
-- **Anime**: Kai's anime airing schedule (Jikan);
+- **Anime**: Kai's anime airing schedule (Jikan). When Jikan fails or takes over 8 s, the schedule comes from AniList instead for 10 minutes;
 - **For You**, the default: built from your own watch history by `overlay/portable_config/webmods/StremioZ/hero-for-you.js`.
 
 The mode is remembered. Before 0.9.3, For You was the first entry of the Movie and Series source lists; on the first start of 0.9.3, `hero-for-you.js` moves saved source choices back to Kai's lists, and whoever was seeing For You keeps it (with its cached titles) as the For You mode.
@@ -240,6 +244,25 @@ Stremio's shell player starts every video at 1×. StremioZ starts it at the spee
 | T | Stats |
 
 The upscaler for anime is chosen in **Settings → Player → Anime Upscaler** (default: AnimeJaNai Balanced). Switching while watching (Shift+1/2/3, Ctrl+0, or the controller's player menu) applies at once and **becomes the new default**: the next anime starts with it, and Settings shows it. RTX Video HDR (Ctrl+H; Settings → Player → RTX Video HDR) and motion smoothing (Ctrl+M; Settings → Player → Motion Smoothing) work the same way, from the keys or the player menu. Turning upscaling off on a video that isn't anime doesn't change the anime default. Local files and plain URLs, which come without Stremio's metadata, use the same defaults (`portable_config/cache/stremioz-defaults.json`).
+
+## Skip intro
+
+When an episode has an intro, recap or ending to skip, a "Skip" prompt appears (Tab, or X on the controller). Kai's `notify_skip` script finds the skip times, in this order:
+
+1. **The file's chapters** named Intro, OP, Opening, Outro, ED, Ending, Credits, Recap, Preview and so on.
+2. **Online skip times**, when the file has no such chapters:
+   - **AniSkip** (api.aniskip.com) for anime. `webmods/StremioZ/skip-sources.js` works out the MyAnimeList entry and episode: from `mal:` or `kitsu:` ids in the player address (Kitsu through arm.haglund.dev), or for IMDb ids (Cinemeta):
+     - the MAL ids Kai's metadata and arm.haglund.dev's IMDb mapping know (ARM's specials and films, season 0, left out);
+     - AniList's sequel/prequel links from them, for all the show's TV entries in airing order (MAL has one per season or cour);
+     - Cinemeta's episode counts per season turn S:E into an absolute episode number, counted on through those entries. So a season split into two MAL entries (Spy x Family season 1, Slime season 2) gets the right one.
+
+     The times are those submitted for an episode of about the same length as the file (AniSkip allows some 20–30 s).
+   - **IntroDB** (api.introdb.app) by IMDb id, season and episode, for other shows. AniSkip's times win when both have some.
+
+   Online segments that start after the end of the file are ignored. When the episode changes after the file has loaded, the previous episode's online segments, and the chapters made from them, are cleared.
+3. **Silence and black-frame detection**: press skip twice to fast-forward until the audio goes quiet or the picture goes black. It's the same idea as Stremio Community's skip-intro.
+
+The lookups run in mpv with Windows' `curl.exe`. Kai fetched IntroDB with a `python.exe` that StremioZ doesn't ship, so before 0.9.4 that lookup never worked here.
 
 ## Known issues
 

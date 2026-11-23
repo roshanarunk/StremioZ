@@ -77,11 +77,44 @@ local virtual_category_names = {
 -- Normalize backslashes first since Windows paths mix separators.
 local normalized_script_dir = script_dir:gsub("\\", "/")
 local stremio_root = normalized_script_dir:match("(.+/)[^/]+/[^/]+/[^/]+/$") or normalized_script_dir
-local python_exe   = stremio_root .. "python.exe"
+local python_exe   = stremio_root .. "python.exe" -- StremioZ: unused (no python.exe); see http_get_json
+
+-- StremioZ: skip times come from, in order:
+--   1. the file's own chapters named Intro/OP/Outro/ED/Recap... (HIGH confidence);
+--   2. online: AniSkip for anime (MAL id + episode, from webmods/StremioZ/
+--      skip-sources.js), else IntroDB (IMDb id + season + episode);
+--   3. the silence and black-frame detection below (fast-forward until the
+--      audio goes quiet, the same idea as Stremio Community's skip-intro.lua).
+-- GET a JSON document with Windows' curl.exe (no CORS limits, unlike the page).
+local function http_get_json(url, callback)
+    mp.command_native_async({
+        name = "subprocess",
+        args = { "curl", "-s", "-g", "-L", "--max-time", "8", "-A", "StremioZ", url },
+        capture_stdout = true,
+        capture_stderr = false,
+        playback_only  = false,
+    }, function(success, result, err)
+        if not success or not result or result.status ~= 0 or not result.stdout or result.stdout == "" then
+            callback(nil, err or ("curl exit " .. tostring(result and result.status)))
+            return
+        end
+        local data = utils.parse_json(result.stdout)
+        if type(data) ~= "table" then
+            callback(nil, "invalid JSON")
+            return
+        end
+        callback(data)
+    end)
+end
 
 --============================================================================--
 --                     INTRODB VIRTUAL CHAPTER LOGIC                          --
 --============================================================================--
+
+-- StremioZ: the file's own chapter list, put back when the online segments
+-- turn out to be the previous episode's.
+local file_chapter_list = nil
+local native_chapters_synced = false
 
 -- Synchronize native MPV chapter list with IntroDB segments
 local function sync_native_chapters_from_introdb(segments)
@@ -119,6 +152,7 @@ local function sync_native_chapters_from_introdb(segments)
         table.insert(native_list, { time = pt.start_sec, title = pt.title })
 
         local next_start = (i < #points) and points[i + 1].start_sec or duration
+        if duration > 0 and pt.end_sec >= duration then pt.end_sec = duration end -- StremioZ
         if pt.end_sec > 0 and (next_start - pt.end_sec) > 5.0 then
             local main_title = "Main Episode"
             if i == #points and (duration - pt.end_sec) > 5.0 then
@@ -141,6 +175,7 @@ local function sync_native_chapters_from_introdb(segments)
     end
 
     if #cleaned > 0 then
+        native_chapters_synced = true
         mp.set_property_native("chapter-list", cleaned)
         mp.msg.info(string.format("IntroDB: synced %d native MPV chapters", #cleaned))
     end
@@ -199,9 +234,30 @@ end
 local function inject_introdb_virtual_chapters()
     local segments = state.chapter_cache.introdb_segments
     if not segments then return end
+    local source = segments.source or "IntroDB"
+
+    -- StremioZ: chapters in the file named Intro/OP/Outro/ED come first; the
+    -- online segments are only used for files without them.
+    if state.chapter_cache.has_high_confidence then
+        mp.msg.info(source .. ": the file's named chapters take priority, online segments not used")
+        return
+    end
 
     local duration = mp.get_property_native("duration") or 0
     local mapping = { intro = "opening", recap = "recap", outro = "ending" }
+
+    -- StremioZ: drop segments that start past the end of this file (times
+    -- submitted for a longer release).
+    local fitting = { source = source }
+    for api_key, _ in pairs(mapping) do
+        local seg = segments[api_key]
+        if seg and seg.start_sec and (duration <= 0 or seg.start_sec < duration - 1) then
+            fitting[api_key] = seg
+        elseif seg then
+            mp.msg.info(string.format("%s: %s segment starts after the end of the file, ignored", source, api_key))
+        end
+    end
+    segments = fitting
 
     -- Pre-check: verify at least one valid segment exists before clearing local chapters
     local has_valid = false
@@ -214,13 +270,13 @@ local function inject_introdb_virtual_chapters()
     end
 
     if not has_valid then
-        mp.msg.info("IntroDB: no valid segments found, keeping local chapters")
+        mp.msg.info(source .. ": no valid segments found, keeping local chapters")
         return
     end
 
     -- IntroDB has data — clear local chapters and use IntroDB exclusively
     state.chapter_cache.skippable_chapters = {}
-    mp.msg.info("IntroDB: taking priority, local chapters cleared")
+    mp.msg.info(source .. ": taking priority, local chapters cleared")
 
     local added = 0
     for api_key, category in pairs(mapping) do
@@ -240,66 +296,108 @@ local function inject_introdb_virtual_chapters()
                 confidence = "high",
             })
             added = added + 1
-            mp.msg.info(string.format("IntroDB: injected %s segment (%.1fs -> %.1fs)",
+            mp.msg.info(string.format("%s: injected %s segment (%.1fs -> %.1fs)", source,
                 category, seg.start_sec, safe_end))
         end
     end
 
-    mp.msg.info(string.format("IntroDB: %d segment(s) active", added))
+    mp.msg.info(string.format("%s: %d segment(s) active", source, added))
 
     -- Sync native MPV chapters with IntroDB segments
     sync_native_chapters_from_introdb(segments)
 end
 
--- Fetch IntroDB segments asynchronously via Python subprocess (no CORS restrictions).
+local function same_episode(imdb_id, season, episode)
+    return content.get_imdb_id() == imdb_id and
+           content.get_season() == season and
+           content.get_episode() == episode
+end
+
+-- StremioZ: keep online segments for this episode; AniSkip's beat IntroDB's.
+local function store_online_segments(data)
+    local current = state.chapter_cache.introdb_segments
+    if current and current.source == "AniSkip" and data.source ~= "AniSkip" then
+        mp.msg.info(data.source .. ": AniSkip segments already in use")
+        return
+    end
+    state.chapter_cache.introdb_segments = data
+    mp.msg.info(string.format("%s: segments stored (intro=%s, recap=%s, outro=%s)", data.source,
+        tostring(data.intro ~= nil), tostring(data.recap ~= nil), tostring(data.outro ~= nil)))
+
+    -- Late-arrival injection: if finalize_setup already ran, inject now
+    if state.skip_state.mode == "hybrid" then
+        inject_introdb_virtual_chapters()
+    end
+end
+
+-- Fetch IntroDB segments asynchronously (StremioZ: with curl.exe; Kai used
+-- a python.exe that StremioZ doesn't ship, so this never worked here).
 local function fetch_introdb_segments(imdb_id, season, episode)
     if not imdb_id or not season or not episode then return end
+    if not tostring(imdb_id):match("^tt%d+$") then return end
 
-    local python_code = string.format(
-        "import urllib.request,sys\n" ..
-        "try:\n" ..
-        " r=urllib.request.urlopen('https://api.introdb.app/segments?imdb_id=%s&season=%d&episode=%d',timeout=8)\n" ..
-        " sys.stdout.write(r.read().decode('utf-8'))\n" ..
-        "except: sys.stdout.write('{}')",
-        imdb_id, season, episode
-    )
-
+    local url = string.format("https://api.introdb.app/segments?imdb_id=%s&season=%d&episode=%d",
+        imdb_id, season, episode)
     mp.msg.info(string.format("IntroDB: fetching segments for %s S%dE%d", imdb_id, season, episode))
 
-    mp.command_native_async({
-        name = "subprocess",
-        args = { python_exe, "-c", python_code },
-        capture_stdout = true,
-        capture_stderr = false,
-        playback_only  = false,
-    }, function(success, result, err)
-        if not success or not result or not result.stdout or result.stdout == "" then
-            mp.msg.warn("IntroDB: fetch failed - " .. (err or "no output"))
+    http_get_json(url, function(data, err)
+        if not data then
+            mp.msg.warn("IntroDB: fetch failed - " .. tostring(err))
             return
         end
-
-        local data = utils.parse_json(result.stdout)
-        if not data or type(data) ~= "table" then
-            mp.msg.warn("IntroDB: invalid JSON response")
-            return
-        end
-
         -- Only store if this response still matches current episode
-        if content.get_imdb_id() ~= imdb_id or
-           content.get_season() ~= season or
-           content.get_episode() ~= episode then
+        if not same_episode(imdb_id, season, episode) then
             mp.msg.info("IntroDB: stale response discarded (episode changed)")
             return
         end
+        data.source = "IntroDB"
+        store_online_segments(data)
+    end)
+end
 
-        state.chapter_cache.introdb_segments = data
-        mp.msg.info(string.format("IntroDB: segments stored (intro=%s, recap=%s, outro=%s)",
-            tostring(data.intro ~= nil), tostring(data.recap ~= nil), tostring(data.outro ~= nil)))
+-- StremioZ: AniSkip (api.aniskip.com), the community skip-time database for
+-- anime, by MyAnimeList id and episode. episodeLength picks the times
+-- submitted for a release of this file's length.
+local AniSkipTypes = { op = "intro", ["mixed-op"] = "intro", ed = "outro", ["mixed-ed"] = "outro", recap = "recap" }
+local pending_aniskip = nil
 
-        -- Late-arrival injection: if finalize_setup already ran, inject now
-        if state.skip_state.mode == "hybrid" then
-            inject_introdb_virtual_chapters()
+local function fetch_aniskip_segments()
+    local req = pending_aniskip
+    if not req then return end
+    local duration = mp.get_property_native("duration") or 0
+    if duration <= 0 then return end -- retried when the file has loaded
+    pending_aniskip = nil
+    if not same_episode(req.imdb_id, req.season, req.episode) then return end
+
+    local url = string.format(
+        "https://api.aniskip.com/v2/skip-times/%d/%d?types[]=op&types[]=ed&types[]=mixed-op&types[]=mixed-ed&types[]=recap&episodeLength=%d",
+        req.mal_id, req.mal_episode, math.floor(duration + 0.5))
+    mp.msg.info(string.format("AniSkip: fetching MAL %d episode %d (%.0fs)", req.mal_id, req.mal_episode, duration))
+
+    http_get_json(url, function(data, err)
+        if not data then
+            mp.msg.warn("AniSkip: fetch failed - " .. tostring(err))
+            return
         end
+        if not same_episode(req.imdb_id, req.season, req.episode) then
+            mp.msg.info("AniSkip: stale response discarded (episode changed)")
+            return
+        end
+        if not data.found or type(data.results) ~= "table" then
+            mp.msg.info("AniSkip: no skip times for this episode")
+            return
+        end
+        local segments = { source = "AniSkip" }
+        local count = 0
+        for _, r in ipairs(data.results) do
+            local key = AniSkipTypes[r.skipType]
+            local iv = r.interval
+            if key and not segments[key] and type(iv) == "table" and iv.startTime and iv.endTime then
+                segments[key] = { start_sec = iv.startTime, end_sec = iv.endTime }
+                count = count + 1
+            end
+        end
+        if count > 0 then store_online_segments(segments) end
     end)
 end
 
@@ -441,9 +539,12 @@ local function on_file_loaded()
     end
     active_skippable_chapter_key = nil
     state.reset_all()
-    
+    file_chapter_list = mp.get_property_native("chapter-list") or {}
+    native_chapters_synced = false
+
     -- Wait a short time for content-metadata to arrive, then run setup
     mp.add_timeout(1.0, function()
+        fetch_aniskip_segments() -- StremioZ: one waiting for the file's length
         if content.is_movie() then
             mp.msg.info("Movie detected - skip detection disabled")
             return
@@ -575,6 +676,21 @@ mp.register_script_message("content-metadata", function(json)
     if episode_changed then
         state.chapter_cache.introdb_segments = nil
         active_skippable_chapter_key = nil
+        -- StremioZ: and the skip points made from the previous episode's
+        -- online segments (metadata can arrive after the file has loaded).
+        local kept = {}
+        for _, ch in ipairs(state.chapter_cache.skippable_chapters or {}) do
+            if not ch.is_virtual then table.insert(kept, ch) end
+        end
+        if #kept ~= #(state.chapter_cache.skippable_chapters or {}) then
+            state.chapter_cache.skippable_chapters = kept
+            notification.hide_skip_overlay()
+            mp.msg.info("Previous episode's online skip segments cleared")
+        end
+        if native_chapters_synced and file_chapter_list then
+            native_chapters_synced = false
+            mp.set_property_native("chapter-list", file_chapter_list)
+        end
     end
 
     -- Store content metadata
@@ -596,6 +712,23 @@ mp.register_script_message("content-metadata", function(json)
         mp.msg.info("Content type now available, running deferred setup")
         finalize_setup()
     end
+end)
+
+-- StremioZ: the MyAnimeList entry and episode for this anime episode, from
+-- webmods/StremioZ/skip-sources.js (after content-metadata for the same
+-- episode). {imdb_id, season, episode, mal_id, mal_episode}
+mp.register_script_message("stremioz-aniskip", function(json)
+    local data = utils.parse_json(json)
+    if type(data) ~= "table" or not tonumber(data.mal_id) or not tonumber(data.mal_episode) then return end
+    if not same_episode(data.imdb_id, data.season, data.episode) then
+        mp.msg.info("AniSkip: request for another episode ignored")
+        return
+    end
+    pending_aniskip = {
+        imdb_id = data.imdb_id, season = data.season, episode = data.episode,
+        mal_id = math.floor(tonumber(data.mal_id)), mal_episode = math.floor(tonumber(data.mal_episode)),
+    }
+    fetch_aniskip_segments()
 end)
 
 -- Handler for dynamic config updates (Web UI)

@@ -906,27 +906,106 @@ class CatalogEnrichmentService {
     const baseUrl = this.config.ANIME_CATALOG_URL;
     const url = `${baseUrl}${endpoint}`;
 
+    // StremioZ: when Jikan is down (it times out for long stretches), the
+    // schedule comes from AniList instead; Jikan is tried again 10 min later.
+    if (typeof daysAgo === "number" && Date.now() < (this._jikanDownUntil || 0)) {
+      return this.fetchAniListSchedule(daysAgo);
+    }
+
     try {
       console.log(`[CatalogService] Fetching Jikan: ${url}`);
 
-      // Use Rate Limiter if available
-      if (
-        this.rateLimiter &&
-        typeof this.rateLimiter.makeJikanRequest === "function"
-      ) {
-        const json = await this.rateLimiter.makeJikanRequest(url);
-        return json.data || [];
-      }
+      const request = (async () => {
+        // Use Rate Limiter if available
+        if (
+          this.rateLimiter &&
+          typeof this.rateLimiter.makeJikanRequest === "function"
+        ) {
+          const json = await this.rateLimiter.makeJikanRequest(url);
+          return json.data || [];
+        }
 
-      // Fallback (Should typically use RateLimiter via getter fallback)
-      const response = await fetch(url);
-      if (!response.ok) throw new Error(`HTTP ${response.status}`);
-      const json = await response.json();
-      return json.data || [];
+        // Fallback (Should typically use RateLimiter via getter fallback)
+        const response = await fetch(url);
+        if (!response.ok) throw new Error(`HTTP ${response.status}`);
+        const json = await response.json();
+        return json.data || [];
+      })();
+      const timeout = new Promise((_, reject) =>
+        setTimeout(() => reject(new Error("timed out")), 8000),
+      );
+      const data = await Promise.race([request, timeout]);
+      if (!Array.isArray(data)) throw new Error("no data");
+      return data;
     } catch (e) {
       console.error("[CatalogService] Failed to fetch Jikan:", e);
-      return [];
+      if (typeof daysAgo !== "number") return [];
+      this._jikanDownUntil = Date.now() + 10 * 60 * 1000;
+      return this.fetchAniListSchedule(daysAgo);
     }
+  }
+
+  /**
+   * StremioZ: the anime airing on a day (daysAgo, local time) from AniList,
+   * shaped like Jikan's schedule items so the rest of the pipeline is the same.
+   */
+  async fetchAniListSchedule(daysAgo = 0) {
+    const day = new Date();
+    day.setHours(0, 0, 0, 0);
+    day.setDate(day.getDate() - daysAgo);
+    const start = Math.floor(day.getTime() / 1000);
+    const end = start + 86400;
+    const query = `query ($start: Int, $end: Int, $page: Int) {
+      Page(page: $page, perPage: 50) {
+        pageInfo { hasNextPage }
+        airingSchedules(airingAt_greater: $start, airingAt_lesser: $end, sort: TIME) {
+          media {
+            idMal title { romaji english } format duration episodes genres
+            averageScore seasonYear isAdult countryOfOrigin description(asHtml: false)
+            tags { name category }
+          }
+        }
+      }
+    }`;
+    const items = new Map();
+    try {
+      console.log(`[CatalogService] Fetching AniList schedule (${daysAgo} day(s) ago)`);
+      for (let page = 1; page <= 3; page++) {
+        const response = await fetch("https://graphql.anilist.co", {
+          method: "POST",
+          headers: { "Content-Type": "application/json", Accept: "application/json" },
+          body: JSON.stringify({ query, variables: { start, end, page } }),
+        });
+        if (!response.ok) throw new Error(`HTTP ${response.status}`);
+        const json = await response.json();
+        const pageData = json?.data?.Page;
+        for (const s of pageData?.airingSchedules || []) {
+          const m = s.media;
+          if (!m || !m.idMal || m.isAdult || items.has(m.idMal)) continue;
+          if (m.countryOfOrigin && m.countryOfOrigin !== "JP") continue;
+          if (!["TV", "TV_SHORT", "ONA"].includes(m.format)) continue;
+          const kids = (m.tags || []).some((t) => t.name === "Kids");
+          items.set(m.idMal, {
+            mal_id: m.idMal,
+            title: m.title?.romaji || m.title?.english,
+            title_english: m.title?.english || null,
+            type: "TV",
+            duration: m.duration ? `${m.duration} min per ep` : "Unknown",
+            episodes: m.episodes || null,
+            demographics: kids ? [{ name: "Kids" }] : [],
+            genres: (m.genres || []).map((name) => ({ name })),
+            score: m.averageScore != null ? m.averageScore / 10 : null,
+            year: m.seasonYear || null,
+            url: `https://myanimelist.net/anime/${m.idMal}`,
+            synopsis: m.description || null,
+          });
+        }
+        if (!pageData?.pageInfo?.hasNextPage) break;
+      }
+    } catch (e) {
+      console.error("[CatalogService] Failed to fetch AniList:", e);
+    }
+    return [...items.values()];
   }
   /**
    * TEST UTILITY: Batch test proxy candidates

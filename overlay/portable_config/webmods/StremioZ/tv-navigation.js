@@ -159,9 +159,76 @@
     try {
       el.focus({ preventScroll: true });
     } catch (e) {}
-    if (!opts.noScroll) el.scrollIntoView({ block: opts.block || "nearest", inline: "nearest", behavior: "smooth" });
+    if (!opts.noScroll) reveal(el, opts.block || "nearest");
     const row = rowOf(el);
     if (row) rowMemory.set(row, el);
+  }
+
+  // ───────────────────────────── scrolling
+  // Short eased scrolls (about 120 ms) instead of Chromium's smooth
+  // scrolling, which takes up to half a second and made the controller feel
+  // slow. "instant" also overrides CSS scroll-behavior: smooth.
+  const SCROLL_MS = 120;
+  const scrollAnims = new Map();
+  // The page's main vertical scroller: Stremio's pages scroll an inner box,
+  // not the window (the home banner sits outside the board's list, so the
+  // focused element's own scroller can't be used from there). The largest
+  // visible one wins.
+  function pageScroller() {
+    let best = null,
+      bestArea = 0;
+    const walker = document.createTreeWalker(document.body, NodeFilter.SHOW_ELEMENT);
+    for (let el = walker.nextNode(); el; el = walker.nextNode()) {
+      if (el.scrollHeight <= el.clientHeight + 4 || el.clientHeight < innerHeight * 0.3) continue;
+      if (!/(auto|scroll)/.test(getComputedStyle(el).overflowY) || !shown(el)) continue;
+      const area = el.clientWidth * el.clientHeight;
+      if (area > bestArea) {
+        bestArea = area;
+        best = el;
+      }
+    }
+    return best || document.scrollingElement || document.documentElement;
+  }
+  function scrollBoxTo(box, top, left, ms = SCROLL_MS) {
+    const sy = box.scrollTop,
+      sx = box.scrollLeft;
+    const ty = Math.max(0, Math.min(top, box.scrollHeight - box.clientHeight));
+    const tx = Math.max(0, Math.min(left, box.scrollWidth - box.clientWidth));
+    cancelAnimationFrame(scrollAnims.get(box) || 0);
+    scrollAnims.delete(box);
+    if (Math.abs(ty - sy) < 1 && Math.abs(tx - sx) < 1) return;
+    if (ms <= 0) return box.scrollTo({ top: ty, left: tx, behavior: "instant" });
+    const t0 = performance.now();
+    const step = (now) => {
+      const p = Math.min(1, (now - t0) / ms);
+      const e = 1 - Math.pow(1 - p, 3);
+      box.scrollTo({ top: sy + (ty - sy) * e, left: sx + (tx - sx) * e, behavior: "instant" });
+      if (p < 1) scrollAnims.set(box, requestAnimationFrame(step));
+      else scrollAnims.delete(box);
+    };
+    scrollAnims.set(box, requestAnimationFrame(step));
+  }
+  const boxRect = (box) =>
+    box === document.scrollingElement || box === document.documentElement ? { top: 0, bottom: innerHeight, left: 0, right: innerWidth } : box.getBoundingClientRect();
+
+  // scrollIntoView, but quick: the innermost vertical and horizontal
+  // scrollers around el move so that el is in view ("nearest") or centred.
+  function reveal(el, block = "nearest") {
+    const pad = 14;
+    for (const vertical of [true, false]) {
+      const box = scrollerOf(el.parentElement, vertical) || (vertical ? pageScroller() : null);
+      if (!box) continue;
+      const r = el.getBoundingClientRect(),
+        b = boxRect(box);
+      const [lo, hi, blo, bhi] = vertical ? [r.top, r.bottom, b.top, b.bottom] : [r.left, r.right, b.left, b.right];
+      let d = 0;
+      if (vertical && block === "center") d = (lo + hi) / 2 - (blo + bhi) / 2;
+      else if (hi - lo > bhi - blo - 2 * pad || lo < blo + pad) d = lo - blo - pad;
+      else if (hi > bhi - pad) d = hi - bhi + pad;
+      if (Math.abs(d) < 1) continue;
+      if (vertical) scrollBoxTo(box, box.scrollTop + d, box.scrollLeft);
+      else scrollBoxTo(box, box.scrollTop, box.scrollLeft + d);
+    }
   }
 
   // The focus ring is its own fixed layer that follows the focused element, so
@@ -183,7 +250,7 @@
     if (ringFor !== focused) {
       // Glide between targets; follow scrolling without lag.
       ringFor = focused;
-      ringMoveUntil = performance.now() + 160;
+      ringMoveUntil = performance.now() + 90;
       const rr = getComputedStyle(focused).borderRadius;
       ring.style.borderRadius = rr && rr !== "0px" ? `calc(${rr} + 4px)` : "10px";
     }
@@ -291,18 +358,17 @@
     return inView.sort((a, b) => dist(a) - dist(b))[0] || prim[0];
   }
 
+  // The innermost scrollable around the focus that way, else the page.
+  function scrollTarget(dir) {
+    const vertical = dir === "up" || dir === "down";
+    const cur = current();
+    return (cur && scrollerOf(cur, vertical)) || pageScroller();
+  }
+
   function scrollStep(dir, probe = false) {
     const dy = dir === "down" ? 1 : dir === "up" ? -1 : 0;
     const dx = dir === "right" ? 1 : dir === "left" ? -1 : 0;
-    // The innermost scrollable around the focus, else the page's main scroller.
-    let el = current();
-    for (; el; el = el.parentElement) {
-      const cs = getComputedStyle(el);
-      const canY = dy && /(auto|scroll)/.test(cs.overflowY) && el.scrollHeight > el.clientHeight + 4;
-      const canX = dx && /(auto|scroll)/.test(cs.overflowX) && el.scrollWidth > el.clientWidth + 4;
-      if (canY || canX) break;
-    }
-    const target = el || document.scrollingElement;
+    const target = scrollTarget(dir);
     if (probe) {
       const left = dy > 0 ? target.scrollHeight - target.clientHeight - target.scrollTop
         : dy < 0 ? target.scrollTop
@@ -310,7 +376,7 @@
         : target.scrollLeft;
       if (left < (dy ? innerHeight : innerWidth) / 3) return false;
     }
-    target.scrollBy({ top: dy * innerHeight * 0.5, left: dx * innerWidth * 0.5, behavior: probe ? "auto" : "smooth" });
+    scrollBoxTo(target, target.scrollTop + dy * innerHeight * 0.5, target.scrollLeft + dx * innerWidth * 0.5, probe ? 0 : SCROLL_MS);
     return true;
   }
 
@@ -357,7 +423,7 @@
     setTimeout(() => {
       const again = pick(cur, dir, candidates(scope).filter((el) => !before.has(el)));
       if (again) setFocus(again, { block: "center" });
-      else if (cur.isConnected) cur.scrollIntoView({ block: "nearest", inline: "nearest" });
+      else if (cur.isConnected) reveal(cur);
     }, 220);
   }
 
@@ -761,46 +827,104 @@
       last = pos;
       const t = performance.now() - start;
       const waitList = hash().startsWith("#/detail/") && !list;
-      if ((t > 400 && still >= 3 && !waitList) || t > 2500) fn();
+      if ((t > 250 && still >= 2 && !waitList) || t > 2500) fn();
       else setTimeout(tick, 100);
     };
     setTimeout(tick, 100);
   }
 
-  // Right stick: scroll, then move the highlight to whatever now sits where
-  // it was on screen, within the same list (TV-style), once scrolling stops.
+  // Right stick: scroll smoothly while it is held (faster after a moment),
+  // and keep the highlight on whatever sits where it was on screen, within
+  // the same list (TV-style), as the list moves.
   let stick = null;
+  function nearestTo(x, y, box, scope) {
+    const page = box === document.scrollingElement || box === document.documentElement;
+    const br = boxRect(box);
+    let best = null,
+      bestD = Infinity;
+    for (const el of candidates(scope)) {
+      if (!page && !box.contains(el)) continue;
+      const r = el.getBoundingClientRect();
+      const cx = r.left + r.width / 2,
+        cy = r.top + r.height / 2;
+      if (cy < br.top || cy > br.bottom || cx < br.left || cx > br.right) continue;
+      const d = Math.hypot(cx - x, cy - y);
+      if (d < bestD) {
+        bestD = d;
+        best = el;
+      }
+    }
+    return best;
+  }
+  function stickStop() {
+    const s = stick;
+    stick = null;
+    if (!s) return;
+    cancelAnimationFrame(s.raf);
+    if (s.snapOff) {
+      // Snapping back on: the list settles on the nearest row; follow it.
+      s.box.style.scrollSnapType = s.snap;
+      setTimeout(() => {
+        if (stick) return;
+        const near = nearestTo(s.x, s.y, s.box, s.scope);
+        if (near && near !== focused) setFocus(near, { noScroll: true });
+      }, 180);
+    }
+  }
   function stickScroll(dir, scope) {
+    const now = performance.now();
+    if (stick && stick.dir === dir && stick.scope === scope) {
+      stick.alive = now; // held: the pad repeats the press
+      return;
+    }
+    stickStop();
     const vertical = dir === "up" || dir === "down";
     const cur = current(scope);
-    if (!stick && cur) {
-      const r = cur.getBoundingClientRect();
-      stick = { x: r.left + r.width / 2, y: r.top + r.height / 2, box: scrollerOf(cur, vertical) };
+    const box = scrollTarget(dir);
+    const r = cur ? cur.getBoundingClientRect() : null;
+    const b = boxRect(box);
+    stick = {
+      dir,
+      scope,
+      box,
+      x: r ? r.left + r.width / 2 : (b.left + b.right) / 2,
+      y: r ? r.top + r.height / 2 : (b.top + b.bottom) / 2,
+      start: now,
+      last: now,
+      alive: now,
+      picked: 0,
+      snap: box.style.scrollSnapType,
+      snapOff: false,
+    };
+    // Kai's board snaps row by row, which would undo every small step.
+    if (getComputedStyle(box).scrollSnapType !== "none") {
+      box.style.scrollSnapType = "none";
+      stick.snapOff = true;
     }
-    scrollStep(dir);
-    if (!stick) return;
-    clearTimeout(stick.timer);
-    stick.timer = setTimeout(() => {
-      const { x, y, box } = stick;
-      stick = null;
-      const br = box ? box.getBoundingClientRect() : { top: 0, bottom: innerHeight, left: 0, right: innerWidth };
-      const near = candidates(scope)
-        .filter((el) => !box || box.contains(el))
-        .filter((el) => {
-          const r = el.getBoundingClientRect();
-          const cx = r.left + r.width / 2,
-            cy = r.top + r.height / 2;
-          return cy > br.top && cy < br.bottom && cx > br.left && cx < br.right;
-        })
-        .sort((a, b) => {
-          const d = (el) => {
-            const r = el.getBoundingClientRect();
-            return Math.hypot(r.left + r.width / 2 - x, r.top + r.height / 2 - y);
-          };
-          return d(a) - d(b);
-        })[0];
-      if (near) setFocus(near, { noScroll: true });
-    }, 420);
+    const sign = dir === "down" || dir === "right" ? 1 : -1;
+    const tick = (t) => {
+      const s = stick;
+      if (!s || s.dir !== dir) return;
+      // A release always arrives as "up"; this is only a safety net.
+      if (t - s.alive > 600) return stickStop();
+      const dt = Math.min(0.05, (t - s.last) / 1000);
+      s.last = t;
+      // Screens per second: 1.4, then 3 after 0.8 s.
+      const speed = (t - s.start > 800 ? 3 : 1.4) * (vertical ? innerHeight : innerWidth);
+      const step = sign * speed * dt;
+      s.box.scrollTo({
+        top: s.box.scrollTop + (vertical ? step : 0),
+        left: s.box.scrollLeft + (vertical ? 0 : step),
+        behavior: "instant",
+      });
+      if (t - s.picked > 60) {
+        s.picked = t;
+        const near = nearestTo(s.x, s.y, s.box, s.scope);
+        if (near && near !== focused) setFocus(near, { noScroll: true });
+      }
+      s.raf = requestAnimationFrame(tick);
+    };
+    stick.raf = requestAnimationFrame(tick);
   }
 
   function cyclePage(step) {
@@ -942,6 +1066,7 @@
     if (!lsGet(STORE.controller, true)) return;
     if (msg.pad) pad = msg.pad;
     if (msg.state === "up") {
+      if (String(msg.button).startsWith("rs_")) stickStop();
       // End a held seek on the web player.
       if (isPlayer() && !controlsMode && (msg.button === "left" || msg.button === "right"))
         document.dispatchEvent(

@@ -81,11 +81,23 @@ bool CheckSingleInstance(int argc, char* argv[], std::wstring &outProtocolArg)
     return true;
 }
 
+// StremioZ: the page shows the window's fullscreen as its own
+// (webmods/StremioZ/fullscreen.js), so Stremio's button, F and the
+// controller agree on one state.
+static void PostFullscreenState()
+{
+    if (!g_webview) return;
+    g_webview->PostWebMessageAsJson(g_isFullscreen
+        ? L"{\"type\":\"stremioz-fullscreen\",\"on\":true}"
+        : L"{\"type\":\"stremioz-fullscreen\",\"on\":false}");
+}
+
 void ToggleFullScreen(HWND hWnd, bool enable)
 {
     static WINDOWPLACEMENT prevPlc={sizeof(prevPlc)};
-    if(enable==g_isFullscreen) return;
+    if(enable==g_isFullscreen) { PostFullscreenState(); return; }
     g_isFullscreen = enable;
+    PostFullscreenState();
 
     if(enable){
         GetWindowPlacement(hWnd, &prevPlc);
@@ -233,6 +245,8 @@ void HandleEvent(const std::string &ev, std::vector<std::string> &args)
     } else if(ev=="stremioz-fullscreen"){
         // StremioZ: TV mode. Controller presses are not user gestures, so the
         // page can't requestFullscreen(); use the shell's own fullscreen.
+        // fullscreen.js sends Stremio's own fullscreen requests here too.
+        if (!args.empty() && args[0]=="query") { PostFullscreenState(); return; }
         bool on = args.empty() || args[0]!="false";
         ToggleFullScreen(g_hWnd, on);
     } else if(ev=="stremioz-get-settings"){
